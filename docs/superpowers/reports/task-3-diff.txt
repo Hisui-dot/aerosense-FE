@@ -1,0 +1,61 @@
+diff --git a/backend/db/seed.js b/backend/db/seed.js
+index c63421f..e783654 100644
+--- a/backend/db/seed.js
++++ b/backend/db/seed.js
+@@ -85,7 +85,9 @@ function seed(db) {
+       );
+     }
+     for (const a of alerts) {
+-      db.prepare('INSERT INTO alerts VALUES (?,?,?,?,?,?,?,?,?,?)').run(
++      db.prepare(`INSERT INTO alerts
++        (id, floor, location, detectedAt, sensorId, status, respondedBy, resolvedAt, photoUrl, createdAt)
++        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+         a.id, a.floor, a.location, a.detectedAt, a.sensorId, a.status, a.respondedBy, a.resolvedAt, a.photoUrl, a.createdAt
+       );
+     }
+@@ -99,13 +101,34 @@ function seed(db) {
+         a.id, a.floor, a.zones, a.guardName, a.badge, a.shift, a.status, a.contact
+       );
+     }
++    const crypto = require('crypto');
++    const deviceKeys = {};
+     for (const d of devices) {
+-      db.prepare('INSERT INTO devices VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
++      const apiKey = 'ak_' + crypto.randomBytes(24).toString('hex');
++      deviceKeys[d.id] = apiKey;
++      db.prepare(`INSERT INTO devices
++        (id, name, location, floor, status, pm25, voc, temperature, humidity,
++         lastUpdate, lastSeen, responseTime, signalStrength, battery,
++         firmware, powerStatus, networkSignal, issue, apiKey)
++        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+         d.id, d.name, d.location, d.floor, d.status, d.pm25, d.voc, d.temperature, d.humidity,
+         d.lastUpdate, d.lastSeen, d.responseTime, d.signalStrength, d.battery,
+-        d.firmware, d.powerStatus, d.networkSignal, d.issue
++        d.firmware, d.powerStatus, d.networkSignal, d.issue, apiKey
+       );
+     }
++    const nowMs = Date.now();
++    for (const d of devices) {
++      for (let i = 24; i >= 1; i--) {
++        const ts = new Date(nowMs - i * 5 * 60 * 1000).toISOString(); // every 5 min, last 2h
++        const jitterPm = Math.max(0, (d.pm25 || 8) + (i % 5) - 2);
++        const jitterVoc = Math.max(0, (d.voc || 0.3) + ((i % 3) - 1) * 0.05);
++        db.prepare(`INSERT INTO sensor_readings
++          (id, deviceId, pm25, voc, temperature, humidity, recordedAt, createdAt)
++          VALUES (?,?,?,?,?,?,?,?)`).run(
++          `${d.id}-r${i}`, d.id, jitterPm, jitterVoc, d.temperature, d.humidity, ts, ts
++        );
++      }
++    }
+     for (const l of logs) {
+       db.prepare('INSERT INTO logs VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(
+         l.id, l.type, l.title, l.description, l.timestamp, l.status,
+@@ -116,6 +139,8 @@ function seed(db) {
+       db.prepare('INSERT INTO settings VALUES (?,?)').run(key, JSON.stringify(value));
+     }
+     db.exec('COMMIT');
++    console.log('Seeded device API keys (local dev only):');
++    for (const [id, key] of Object.entries(deviceKeys)) console.log(`  ${id}: ${key}`);
+   } catch (e) {
+     db.exec('ROLLBACK');
+     throw e;

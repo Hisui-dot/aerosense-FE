@@ -1,0 +1,58 @@
+diff --git a/backend/routes/devices.js b/backend/routes/devices.js
+index 7c72894..8d71058 100644
+--- a/backend/routes/devices.js
++++ b/backend/routes/devices.js
+@@ -7,7 +7,13 @@ const { generateApiKey } = require('../utils/apiKey');
+ const router = express.Router();
+ 
+ router.get('/', requireAuth, (req, res) => {
+-  res.json(store.findAll('devices'));
++  const isAdmin = req.user.role === 'admin';
++  const devices = store.findAll('devices').map(d => {
++    if (isAdmin) return d;
++    const { apiKey, ...rest } = d;
++    return rest;
++  });
++  res.json(devices);
+ });
+ 
+ router.get('/:id', requireAuth, (req, res) => {
+@@ -19,13 +25,17 @@ router.get('/:id', requireAuth, (req, res) => {
+     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+     .slice(0, 10);
+ 
+-  res.json({ ...device, events });
++  const isAdmin = req.user.role === 'admin';
++  const { apiKey, ...rest } = device;
++  const payload = isAdmin ? device : rest;
++  res.json({ ...payload, events });
+ });
+ 
+ router.put('/:id', requireAdmin, (req, res) => {
+   const device = store.findById('devices', req.params.id);
+   if (!device) return res.status(404).json({ message: 'Device not found' });
+-  const updated = store.update('devices', req.params.id, req.body);
++  const { apiKey, id, ...patch } = req.body || {};
++  const updated = store.update('devices', req.params.id, patch);
+   res.json(updated);
+ });
+ 
+@@ -100,7 +110,7 @@ router.post('/', requireAdmin, (req, res) => {
+   if (!name) return res.status(400).json({ message: 'name is required' });
+   const now = new Date().toISOString();
+   const device = store.insert('devices', {
+-    id: req.body.id || `D-${uuidv4().slice(0, 8)}`,
++    id: `D-${uuidv4().slice(0, 8)}`,
+     name,
+     location: location || null,
+     floor: floor || null,
+@@ -138,7 +148,8 @@ router.post('/:id/rotate-key', requireAdmin, (req, res) => {
+ router.get('/:id/readings', requireAuth, (req, res) => {
+   const device = store.findById('devices', req.params.id);
+   if (!device) return res.status(404).json({ message: 'Device not found' });
+-  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 1000);
++  const parsedLimit = parseInt(req.query.limit, 10);
++  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 1000) : 100;
+   res.json(store.recentReadings(req.params.id, limit));
+ });
+ 

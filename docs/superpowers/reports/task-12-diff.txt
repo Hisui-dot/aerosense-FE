@@ -1,0 +1,66 @@
+diff --git a/src/app/services/api.ts b/src/app/services/api.ts
+index 06bbcb2..f0615fc 100644
+--- a/src/app/services/api.ts
++++ b/src/app/services/api.ts
+@@ -112,6 +112,7 @@ export interface Device {
+   pm25: number; voc: number; temperature: number | null; humidity: number | null;
+   lastUpdate: string; lastSeen: string; responseTime: string; signalStrength: number;
+   battery: number; firmware: string; powerStatus: string; networkSignal: string; issue: string | null;
++  apiKey?: string; pm25Threshold?: number | null; vocThreshold?: number | null; updatedAt?: string;
+   events?: DeviceEvent[];
+ }
+ 
+@@ -124,6 +125,19 @@ export const devicesApi = {
+   disable:      (id: string) => api.post(`/devices/${id}/disable`),
+   recalibrate:  (id: string) => api.post(`/devices/${id}/recalibrate`),
+   update:       (id: string, data: Partial<Device>) => api.put<Device>(`/devices/${id}`, data),
++  create:       (data: { name: string; location?: string; floor?: string; pm25Threshold?: number; vocThreshold?: number }) =>
++                  api.post<Device & { apiKey: string }>('/devices', data),
++  rotateKey:    (id: string) => api.post<{ id: string; apiKey: string }>(`/devices/${id}/rotate-key`),
++};
++
++// ---- Readings (time series) ----
++export interface Reading {
++  id: string; deviceId: string; pm25: number; voc: number;
++  temperature: number | null; humidity: number | null; recordedAt: string; createdAt: string;
++}
++
++export const readingsApi = {
++  forDevice: (id: string, limit = 100) => api.get<Reading[]>(`/devices/${id}/readings?limit=${limit}`),
+ };
+ 
+ // ---- Users ----
+@@ -162,9 +176,29 @@ export const settingsApi = {
+ };
+ 
+ // ---- Analytics ----
++export interface WeeklyPoint { id: number; day: string; date: number; count: number; }
+ export const analyticsApi = {
+-  summary: () => api.get('/analytics/summary'),
+-  weekly:  () => api.get('/analytics/weekly'),
+-  reports: () => api.get('/analytics/reports'),
+-  qos:     () => api.get('/analytics/qos'),
++  summary: () => api.get<Record<string, unknown>>('/analytics/summary'),
++  weekly:  () => api.get<WeeklyPoint[]>('/analytics/weekly'),
++  reports: () => api.get<Record<string, unknown>>('/analytics/reports'),
++  qos:     () => api.get<Record<string, unknown>>('/analytics/qos'),
++};
++
++// ---- Live stream (SSE) ----
++export interface StreamHandlers {
++  onReading?: (r: Reading) => void;
++  onAlert?: (a: Alert) => void;
++  onError?: (e: Event) => void;
++}
++
++export const streamApi = {
++  subscribe(handlers: StreamHandlers): () => void {
++    const token = getToken();
++    if (!token) return () => {};
++    const es = new EventSource(`${BASE}/stream?token=${encodeURIComponent(token)}`);
++    if (handlers.onReading) es.addEventListener('reading', (e) => handlers.onReading!(JSON.parse((e as MessageEvent).data)));
++    if (handlers.onAlert) es.addEventListener('alert', (e) => handlers.onAlert!(JSON.parse((e as MessageEvent).data)));
++    if (handlers.onError) es.onerror = handlers.onError;
++    return () => es.close();
++  },
+ };

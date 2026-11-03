@@ -1,0 +1,67 @@
+diff --git a/backend/package.json b/backend/package.json
+index 38df97f..c8ffe82 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -15,6 +15,7 @@
+     "express": "^4.19.2",
+     "jsonwebtoken": "^9.0.2",
+     "multer": "^1.4.5-lts.1",
+-    "uuid": "^9.0.1"
++    "uuid": "^9.0.1",
++    "zod": "^3.25.76"
+   }
+ }
+diff --git a/backend/validation/schemas.js b/backend/validation/schemas.js
+new file mode 100644
+index 0000000..42371c9
+--- /dev/null
++++ b/backend/validation/schemas.js
+@@ -0,0 +1,17 @@
++const { z } = require('zod');
++
++const readingSchema = z.object({
++  pm25: z.number().nonnegative().finite(),
++  voc: z.number().nonnegative().finite(),
++  temperature: z.number().finite().optional(),
++  humidity: z.number().min(0).max(100).optional(),
++  recordedAt: z.string().datetime({ offset: true }).optional(),
++});
++
++function parseReading(body) {
++  const result = readingSchema.safeParse(body);
++  if (result.success) return { ok: true, data: result.data };
++  return { ok: false, errors: result.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })) };
++}
++
++module.exports = { readingSchema, parseReading };
+diff --git a/backend/validation/schemas.test.js b/backend/validation/schemas.test.js
+new file mode 100644
+index 0000000..f0c4188
+--- /dev/null
++++ b/backend/validation/schemas.test.js
+@@ -0,0 +1,25 @@
++const { test } = require('node:test');
++const assert = require('node:assert');
++const { parseReading } = require('./schemas');
++
++test('accepts a valid reading', () => {
++  const r = parseReading({ pm25: 42, voc: 0.7, temperature: 24, humidity: 50 });
++  assert.equal(r.ok, true);
++  assert.equal(r.data.pm25, 42);
++});
++
++test('rejects negative pm25', () => {
++  const r = parseReading({ pm25: -1, voc: 0.7 });
++  assert.equal(r.ok, false);
++  assert.ok(r.errors.length > 0);
++});
++
++test('rejects missing voc', () => {
++  const r = parseReading({ pm25: 10 });
++  assert.equal(r.ok, false);
++});
++
++test('accepts optional recordedAt ISO string', () => {
++  const r = parseReading({ pm25: 10, voc: 0.2, recordedAt: '2026-06-19T10:00:00Z' });
++  assert.equal(r.ok, true);
++});

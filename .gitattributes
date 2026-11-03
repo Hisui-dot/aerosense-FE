@@ -1,0 +1,9 @@
+# Treat binary assets as binary — never apply EOL/line-ending conversion.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.docx binary
+*.db binary

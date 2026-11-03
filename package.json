@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend"
+  },
+  "dependencies": {
+    "install": "^0.13.0"
+  }
+}
+

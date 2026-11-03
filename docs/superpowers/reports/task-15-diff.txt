@@ -1,0 +1,697 @@
+diff --git a/src/app/pages/Analytics.tsx b/src/app/pages/Analytics.tsx
+index e8294ae..fb92a1a 100644
+--- a/src/app/pages/Analytics.tsx
++++ b/src/app/pages/Analytics.tsx
+@@ -1,30 +1,38 @@
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useCallback } from 'react';
+ import { Card } from '../components/ui/card';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+ import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+ import { MapPin, Clock, Radio, Wind, AlertTriangle } from 'lucide-react';
+ import { alertsApi, devicesApi } from '../services/api';
++import { useLiveStream } from '../hooks/useLiveStream';
+ 
+ export const Analytics = () => {
+   const [alerts, setAlerts] = useState<any[]>([]);
+   const [devices, setDevices] = useState<any[]>([]);
++  const [loading, setLoading] = useState(true);
++
++  const fetchData = useCallback(async () => {
++    try {
++      const [alertsData, devicesData] = await Promise.all([
++        alertsApi.getAll().catch(() => []),
++        devicesApi.getAll().catch(() => [])
++      ]);
++      setAlerts(alertsData || []);
++      setDevices(devicesData || []);
++    } catch (_e) {
++      // silently retain last data on transient errors
++    } finally {
++      setLoading(false);
++    }
++  }, []);
+ 
+   useEffect(() => {
+-    const fetchData = async () => {
+-      try {
+-        const [alertsData, devicesData] = await Promise.all([
+-          alertsApi.getAll().catch(() => []),
+-          devicesApi.getAll().catch(() => [])
+-        ]);
+-        const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-        setAlerts(Array.from(new Map([...mockAlerts, ...alertsData].map((a: any) => [a.id, a])).values()));
+-        setDevices(devicesData);
+-      } catch(e) {}
+-    };
+     fetchData();
+-    const interval = setInterval(fetchData, 5000);
++    const interval = setInterval(fetchData, 30000);
+     return () => clearInterval(interval);
+-  }, []);
++  }, [fetchData]);
++
++  useLiveStream({ onAlert: () => { fetchData(); } });
+ 
+   // Dynamic Chart Calculations
+   const getDayOfWeek = (dateString?: string) => {
+@@ -73,8 +81,8 @@ export const Analytics = () => {
+     { time: 'Evening (5PM+)', level: 'Low', count: alerts.filter(a => getHour(a) >= 17).length, color: 'bg-green-500' },
+   ];
+ 
+-  const vapeCount = alerts.filter(a => a.type?.toLowerCase().includes('vape')).length || 1;
+-  const pmCount = alerts.filter(a => a.type?.toLowerCase().includes('pm2.5') || a.pm25 > 50).length || 0;
++  const vapeCount = alerts.filter(a => a.type?.toLowerCase().includes('vape')).length;
++  const pmCount = alerts.filter(a => a.type?.toLowerCase().includes('pm2.5') || a.pm25 > 50).length;
+   const otherCount = Math.max(0, alerts.length - vapeCount - pmCount);
+   const total = alerts.length || 1;
+   const detectionClassificationData = [
+@@ -88,15 +96,15 @@ export const Analytics = () => {
+   }));
+   if (sensorActivity.length === 0) sensorActivity.push({ id: 'None', location: 'No sensors connected', detections: 0 });
+ 
+-  const avgPM25 = alerts.length ? Math.round(alerts.reduce((acc, a) => acc + (a.pm25 || 45), 0) / alerts.length) : 34;
+-  const avgVOC = alerts.length ? Math.round(alerts.reduce((acc, a) => acc + (a.voc || 150), 0) / alerts.length) : 446;
+-  const maxPM25 = alerts.length ? Math.max(...alerts.map(a => a.pm25 || 0)) : 55;
+-  const minPM25 = alerts.length ? Math.min(...alerts.map(a => a.pm25 || 0)) : 18;
++  const avgPM25 = alerts.length ? Math.round(alerts.reduce((acc, a) => acc + (a.pm25 || 0), 0) / alerts.length) : null;
++  const avgVOC = alerts.length ? Math.round(alerts.reduce((acc, a) => acc + (a.voc || 0), 0) / alerts.length) : null;
++  const maxPM25 = alerts.length ? Math.max(...alerts.map(a => a.pm25 || 0)) : null;
++  const minPM25 = alerts.length ? Math.min(...alerts.map(a => a.pm25 || 0)) : null;
+ 
+   const airQualityData = incidentTrendData.map(d => ({
+     day: d.date,
+-    pm25: d.alerts > 0 ? avgPM25 + Math.floor(Math.random() * 10) - 5 : Math.max(0, avgPM25 - 10),
+-    voc: d.alerts > 0 ? avgVOC + Math.floor(Math.random() * 50) - 25 : Math.max(0, avgVOC - 100),
++    pm25: d.alerts > 0 ? (avgPM25 ?? 0) : 0,
++    voc: d.alerts > 0 ? (avgVOC ?? 0) : 0,
+   }));
+ 
+   const deadZones = devices.filter(d => alerts.filter(a => a.sensorId === d.id).length === 0).slice(0, 3).map(d => ({
+@@ -104,6 +112,19 @@ export const Analytics = () => {
+   }));
+   if (deadZones.length === 0) deadZones.push({ location: 'All sensors active', detections: alerts.length, status: 'Healthy' });
+ 
++  const hasData = alerts.length > 0 || devices.length > 0;
++
++  if (loading) {
++    return (
++      <div className="min-h-screen bg-[#82BCFE] flex items-center justify-center">
++        <div className="text-white text-center">
++          <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent mx-auto mb-3" />
++          <p className="font-semibold text-lg">Loading analytics…</p>
++        </div>
++      </div>
++    );
++  }
++
+   return (
+     <div className="min-h-screen bg-[#82BCFE] pb-20">
+ 
+@@ -126,10 +147,19 @@ export const Analytics = () => {
+ 
+           {/* MAIN ANALYTICS TAB */}
+           <TabsContent value="main" className="space-y-4">
++            {!hasData && (
++              <Card className="p-8 bg-white shadow-lg rounded-2xl border-0 text-center">
++                <AlertTriangle className="h-10 w-10 text-gray-300 mx-auto mb-3" />
++                <p className="font-semibold text-gray-500">No data yet. Data will appear once alerts are recorded.</p>
++              </Card>
++            )}
+             {/* Top Section - Incident Trends */}
+             <Card className="p-6 bg-white shadow-lg rounded-2xl border-0">
+               <h2 className="font-bold text-gray-900 text-lg mb-4">Incident Trends</h2>
+               <p className="text-sm text-gray-600 mb-4">Number of alerts over the past week</p>
++              {!hasData ? (
++                <div className="flex items-center justify-center h-[250px] text-gray-400 font-semibold">No data yet</div>
++              ) : (
+               <ResponsiveContainer width="100%" height={250}>
+                 <LineChart data={incidentTrendData}>
+                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+@@ -160,6 +190,7 @@ export const Analytics = () => {
+                   />
+                 </LineChart>
+               </ResponsiveContainer>
++              )}
+             </Card>
+ 
+             {/* Middle Section - Key Insights */}
+@@ -298,12 +329,12 @@ export const Analytics = () => {
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                 <div className="bg-blue-50 p-4 rounded-xl">
+                   <div className="text-sm text-gray-600 font-semibold mb-1">Avg PM2.5</div>
+-                  <div className="text-2xl font-bold text-blue-600">{avgPM25} µg/m³</div>
+-                  <div className="text-xs text-gray-500 mt-1">Min: {minPM25} | Max: {maxPM25}</div>
++                  <div className="text-2xl font-bold text-blue-600">{avgPM25 !== null ? `${avgPM25} µg/m³` : '—'}</div>
++                  <div className="text-xs text-gray-500 mt-1">Min: {minPM25 ?? '—'} | Max: {maxPM25 ?? '—'}</div>
+                 </div>
+                 <div className="bg-green-50 p-4 rounded-xl">
+                   <div className="text-sm text-gray-600 font-semibold mb-1">Avg VOC</div>
+-                  <div className="text-2xl font-bold text-green-600">{avgVOC} ppb</div>
++                  <div className="text-2xl font-bold text-green-600">{avgVOC !== null ? `${avgVOC} ppb` : '—'}</div>
+                   <div className="text-xs text-gray-500 mt-1">Weekly average</div>
+                 </div>
+               </div>
+diff --git a/src/app/pages/Sensors.tsx b/src/app/pages/Sensors.tsx
+index 9d2e634..3309898 100644
+--- a/src/app/pages/Sensors.tsx
++++ b/src/app/pages/Sensors.tsx
+@@ -8,27 +8,15 @@ interface Sensor {
+   name: string;
+   floor: string;
+   location: string;
+-  battery: number; // 0–100
++  battery: number | null; // 0–100 or null when not reported
+   status: 'online' | 'offline' | 'maintenance';
+-  sensorHealth: number; // 0–100
++  sensorHealth: number | null; // 0–100 or null when not reported
+   lastServiced: string;
+   replaceIn: string;
+   nextService: string;
+   notes?: string;
+ }
+ 
+-const SENSORS: Sensor[] = [
+-  { id: 'S-01', name: 'Vape Sensor 01', floor: '1st Floor', location: 'CR – Main Lobby', battery: 78, status: 'online', sensorHealth: 92, lastServiced: 'Mar 15, 2026', replaceIn: '~8 months', nextService: 'Sep 15, 2026' },
+-  { id: 'S-02', name: 'Vape Sensor 02', floor: '1st Floor', location: 'Hallway – West Wing', battery: 12, status: 'online', sensorHealth: 68, lastServiced: 'Feb 20, 2026', replaceIn: '~4 months', nextService: 'Jun 20, 2026', notes: 'Battery replacement needed soon.' },
+-  { id: 'S-03', name: 'Vape Sensor 03', floor: '2nd Floor', location: 'CR – Boys Restroom', battery: 55, status: 'online', sensorHealth: 85, lastServiced: 'Apr 1, 2026', replaceIn: '~6 months', nextService: 'Oct 1, 2026' },
+-  { id: 'S-04', name: 'Vape Sensor 04', floor: '2nd Floor', location: 'CR – Girls Restroom', battery: 9, status: 'online', sensorHealth: 71, lastServiced: 'Jan 10, 2026', replaceIn: '~3 months', nextService: 'Apr 10, 2026', notes: 'Critical battery — replace immediately.' },
+-  { id: 'S-05', name: 'Vape Sensor 05', floor: '3rd Floor', location: 'CR – Boys Restroom', battery: 43, status: 'maintenance', sensorHealth: 45, lastServiced: 'Mar 5, 2026', replaceIn: '~2 months', nextService: 'May 5, 2026', notes: 'Sensor element degraded. Schedule replacement.' },
+-  { id: 'S-06', name: 'Vape Sensor 06', floor: '3rd Floor', location: 'CR – Girls Restroom', battery: 91, status: 'online', sensorHealth: 97, lastServiced: 'Apr 10, 2026', replaceIn: '~10 months', nextService: 'Feb 10, 2027' },
+-  { id: 'S-07', name: 'Vape Sensor 07', floor: '3rd Floor', location: 'Hallway – East Wing', battery: 6, status: 'offline', sensorHealth: 30, lastServiced: 'Dec 1, 2025', replaceIn: 'Overdue', nextService: 'Immediate', notes: 'Sensor offline. Battery dead. Requires urgent attention.' },
+-  { id: 'S-08', name: 'Vape Sensor 08', floor: '4th Floor', location: 'CR – Faculty Restroom', battery: 67, status: 'online', sensorHealth: 88, lastServiced: 'Apr 5, 2026', replaceIn: '~7 months', nextService: 'Nov 5, 2026' },
+-  { id: 'S-09', name: 'Vape Sensor 09', floor: '4th Floor', location: 'Library – Section A', battery: 34, status: 'online', sensorHealth: 76, lastServiced: 'Mar 28, 2026', replaceIn: '~5 months', nextService: 'Sep 28, 2026' },
+-  { id: 'S-10', name: 'Vape Sensor 10', floor: 'Ground Floor', location: 'Cafeteria – Section B', battery: 82, status: 'online', sensorHealth: 94, lastServiced: 'Apr 12, 2026', replaceIn: '~9 months', nextService: 'Jan 12, 2027' },
+-];
+ 
+ const getBatteryIcon = (pct: number) => {
+   if (pct >= 60) return BatteryFull;
+@@ -68,39 +56,44 @@ const getHealthLabel = (h: number) => {
+ export const Sensors = () => {
+   const [expandedId, setExpandedId] = useState<string | null>(null);
+   const [filter, setFilter] = useState<'ALL' | 'CRITICAL' | 'OFFLINE'>('ALL');
+-  const [sensors, setSensors] = useState<Sensor[]>(SENSORS);
++  const [sensors, setSensors] = useState<Sensor[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<string | null>(null);
++
++  const fetchSensors = async () => {
++    setLoading(true);
++    setError(null);
++    try {
++      const devicesData = await devicesApi.getAll();
++      const mappedSensors: Sensor[] = (devicesData || []).map((d: any, index: number) => ({
++        id: d.id || `S-${(index + 1).toString().padStart(2, '0')}`,
++        name: d.name || `Vape Sensor ${(index + 1).toString().padStart(2, '0')}`,
++        floor: d.floor || 'Unknown Floor',
++        location: d.location || 'Unknown Location',
++        battery: d.battery ?? null,
++        status: d.status?.toLowerCase() === 'offline' ? 'offline' : d.status?.toLowerCase() === 'maintenance' ? 'maintenance' : 'online',
++        sensorHealth: d.health ?? null,
++        lastServiced: d.lastServiced || '—',
++        replaceIn: d.replaceIn || '—',
++        nextService: d.nextService || '—',
++        notes: d.notes,
++      }));
++      setSensors(mappedSensors);
++    } catch (err) {
++      setError('Failed to load sensors. Please try again.');
++    } finally {
++      setLoading(false);
++    }
++  };
+ 
+   useEffect(() => {
+-    const fetchSensors = async () => {
+-      try {
+-        const devicesData = await devicesApi.getAll();
+-        if (devicesData && devicesData.length > 0) {
+-          const mappedSensors = devicesData.map((d: any, index: number) => ({
+-            id: d.id || `S-${(index + 1).toString().padStart(2, '0')}`,
+-            name: d.name || `Vape Sensor ${(index + 1).toString().padStart(2, '0')}`,
+-            floor: d.floor || 'Unknown Floor',
+-            location: d.location || 'Unknown Location',
+-            battery: d.battery ?? (Math.floor(Math.random() * 40) + 60), // fallback if undefined
+-            status: d.status?.toLowerCase() === 'offline' ? 'offline' : 'online',
+-            sensorHealth: d.health ?? (Math.floor(Math.random() * 20) + 80),
+-            lastServiced: d.lastServiced || 'Mar 15, 2026',
+-            replaceIn: d.replaceIn || '~6 months',
+-            nextService: d.nextService || 'Sep 15, 2026',
+-            notes: d.notes,
+-          } as Sensor));
+-          setSensors(mappedSensors);
+-        }
+-      } catch (error) {
+-        console.error('Failed to fetch sensors', error);
+-      }
+-    };
+     fetchSensors();
+   }, []);
+ 
+-  const criticalCount = sensors.filter(s => s.battery < 15 || s.status === 'offline').length;
++  const criticalCount = sensors.filter(s => (s.battery !== null && s.battery < 15) || s.status === 'offline').length;
+ 
+   const filtered = sensors.filter(s => {
+-    if (filter === 'CRITICAL') return s.battery < 15;
++    if (filter === 'CRITICAL') return s.battery !== null && s.battery < 15;
+     if (filter === 'OFFLINE') return s.status === 'offline' || s.status === 'maintenance';
+     return true;
+   });
+@@ -115,6 +108,34 @@ export const Sensors = () => {
+     }
+   };
+ 
++  if (loading && sensors.length === 0) {
++    return (
++      <div className="min-h-screen bg-[#82BCFE] flex items-center justify-center">
++        <div className="text-white text-center">
++          <div className="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent mx-auto mb-3" />
++          <p className="font-semibold text-lg">Loading sensors…</p>
++        </div>
++      </div>
++    );
++  }
++
++  if (error && sensors.length === 0) {
++    return (
++      <div className="min-h-screen bg-[#82BCFE] flex items-center justify-center px-4">
++        <div className="bg-white rounded-2xl shadow-lg p-6 text-center max-w-sm w-full">
++          <AlertTriangle className="h-10 w-10 text-red-500 mx-auto mb-3" />
++          <p className="font-semibold text-gray-800 mb-4">{error}</p>
++          <button
++            onClick={fetchSensors}
++            className="bg-[#2665D0] text-white font-bold py-2 px-6 rounded-xl hover:bg-[#1a4d9e] transition-colors"
++          >
++            Retry
++          </button>
++        </div>
++      </div>
++    );
++  }
++
+   return (
+     <div className="min-h-screen bg-[#82BCFE] pb-24">
+ 
+@@ -157,10 +178,19 @@ export const Sensors = () => {
+ 
+       {/* Sensor Cards */}
+       <div className="px-4 w-full mx-auto space-y-3">
++        {filtered.length === 0 && !loading && (
++          <div className="bg-white rounded-2xl shadow p-8 text-center">
++            <p className="text-gray-500 font-semibold">No sensors found.</p>
++          </div>
++        )}
+         {filtered.map(sensor => {
+-          const BattIcon = getBatteryIcon(sensor.battery);
+-          const isCriticalBattery = sensor.battery < 15;
++          const batteryValue = sensor.battery ?? 0;
++          const hasBattery = sensor.battery !== null;
++          const BattIcon = getBatteryIcon(batteryValue);
++          const isCriticalBattery = hasBattery && batteryValue < 15;
+           const isExpanded = expandedId === sensor.id;
++          const healthValue = sensor.sensorHealth ?? 0;
++          const hasHealth = sensor.sensorHealth !== null;
+ 
+           return (
+             <div
+@@ -168,7 +198,7 @@ export const Sensors = () => {
+               className={`rounded-2xl shadow-lg overflow-hidden border-2 transition-all hover:shadow-xl hover:-translate-y-1 duration-300 ${
+                 isCriticalBattery || sensor.status === 'offline'
+                   ? 'border-red-300 bg-orange-50'
+-                  : sensor.battery < 30
++                  : hasBattery && batteryValue < 30
+                   ? 'border-yellow-300 bg-yellow-50'
+                   : 'border-transparent bg-white'
+               }`}
+@@ -218,17 +248,17 @@ export const Sensors = () => {
+                 <div className="mb-3">
+                   <div className="flex items-center justify-between mb-1">
+                     <div className="flex items-center gap-1.5">
+-                      <BattIcon className={`h-5 w-5 ${getBatteryColor(sensor.battery)}`} />
++                      <BattIcon className={`h-5 w-5 ${hasBattery ? getBatteryColor(batteryValue) : 'text-gray-400'}`} />
+                       <span className="text-sm font-semibold text-gray-700">Battery Level</span>
+                     </div>
+-                    <span className={`font-bold ${getBatteryColor(sensor.battery)}`}>
+-                      {sensor.battery}%
++                    <span className={`font-bold ${hasBattery ? getBatteryColor(batteryValue) : 'text-gray-400'}`}>
++                      {hasBattery ? `${batteryValue}%` : '—'}
+                     </span>
+                   </div>
+                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                     <div
+-                      className={`h-3 rounded-full transition-all ${getBatteryBarColor(sensor.battery)}`}
+-                      style={{ width: `${sensor.battery}%` }}
++                      className={`h-3 rounded-full transition-all ${hasBattery ? getBatteryBarColor(batteryValue) : 'bg-gray-300'}`}
++                      style={{ width: hasBattery ? `${batteryValue}%` : '0%' }}
+                     />
+                   </div>
+                   {isCriticalBattery && (
+@@ -240,8 +270,8 @@ export const Sensors = () => {
+                 <div className="flex items-center justify-between py-3 border-t border-gray-100">
+                   <div>
+                     <div className="text-xs text-gray-500 font-semibold">Sensor Element Health</div>
+-                    <div className={`font-bold ${getHealthColor(sensor.sensorHealth)}`}>
+-                      {sensor.sensorHealth}% — {getHealthLabel(sensor.sensorHealth)}
++                    <div className={`font-bold ${hasHealth ? getHealthColor(healthValue) : 'text-gray-400'}`}>
++                      {hasHealth ? `${healthValue}% — ${getHealthLabel(healthValue)}` : '—'}
+                     </div>
+                   </div>
+                   <div className="text-right">
+diff --git a/src/app/pages/admin/AdminDashboard.tsx b/src/app/pages/admin/AdminDashboard.tsx
+index c76862e..2dccf8a 100644
+--- a/src/app/pages/admin/AdminDashboard.tsx
++++ b/src/app/pages/admin/AdminDashboard.tsx
+@@ -1,9 +1,10 @@
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useCallback } from 'react';
+ import { Card } from '../../components/ui/card';
+ import { Badge } from '../../components/ui/badge';
+ import { Button } from '../../components/ui/button';
+ import { Link, useNavigate } from 'react-router';
+ import { alertsApi, devicesApi, usersApi } from '../../services/api';
++import { useLiveStream } from '../../hooks/useLiveStream';
+ import {
+   AlertCircle,
+   Radio,
+@@ -16,82 +17,66 @@ import {
+   TrendingUp,
+   Play,
+   X,
++  AlertTriangle,
+ } from 'lucide-react';
+ import { AdminSimulate } from './AdminSimulate';
+ 
+-const RECENT_ALERTS = [
+-  { id: 'ALT-001', sensorId: 'S-03', location: '2nd Floor - Boys Restroom', time: '10:02 AM', status: 'new' },
+-  { id: 'ALT-002', sensorId: 'S-07', location: '3rd Floor - Girls Restroom', time: '10:08 AM', status: 'acknowledged' },
+-  { id: 'ALT-003', sensorId: 'S-11', location: '1st Floor - Hallway East', time: '9:55 AM', status: 'responding' },
+-  { id: 'ALT-004', sensorId: 'S-12', location: 'Cafeteria - Section B', time: '9:40 AM', status: 'resolved' },
+-  { id: 'ALT-005', sensorId: 'S-15', location: '4th Floor - Faculty Restroom', time: '9:25 AM', status: 'resolved' },
+-];
+-
+-const ACTIVITY_DATA = [
+-  { label: 'Mon', value: 4 },
+-  { label: 'Tue', value: 9 },
+-  { label: 'Wed', value: 12 },
+-  { label: 'Thu', value: 6 },
+-  { label: 'Fri', value: 5 },
+-];
+ 
+ export const AdminDashboard = () => {
+   const [alerts, setAlerts] = useState<any[]>([]);
+   const [devices, setDevices] = useState<any[]>([]);
+   const [users, setUsers] = useState<any[]>([]);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<string | null>(null);
+   const [showDemo, setShowDemo] = useState(false);
+   const navigate = useNavigate();
+ 
+-  useEffect(() => {
+-    const loadDashboardData = async () => {
+-      try {
+-        const [alertsData, devicesData, usersData] = await Promise.all([
+-          alertsApi.getAll().catch(() => []),
+-          devicesApi.getAll().catch(() => []),
+-          usersApi.getAll().catch(() => [])
+-        ]);
+-        const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-        
+-        const combinedAlerts = Array.from(new Map([...mockAlerts, ...alertsData].map((a: any) => [a.id, a])).values()).sort((a: any, b: any) => {
+-          const dateA = new Date(a.createdAt || a.detectedAt || 0).getTime();
+-          const dateB = new Date(b.createdAt || b.detectedAt || 0).getTime();
+-          return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+-        });
++  const loadDashboardData = useCallback(async () => {
++    setError(null);
++    try {
++      const [alertsData, devicesData, usersData] = await Promise.all([
++        alertsApi.getAll().catch(() => []),
++        devicesApi.getAll().catch(() => []),
++        usersApi.getAll().catch(() => [])
++      ]);
+ 
+-        setAlerts(combinedAlerts);
+-        setDevices(devicesData);
+-        setUsers(usersData);
+-      } catch (error) {
+-        console.error('Failed to load dashboard data', error);
+-      }
+-    };
+-    loadDashboardData();
+-    const interval = setInterval(loadDashboardData, 5000);
+-    
+-    const handleStorage = (e: StorageEvent) => {
+-      if (e.key === 'mock_alerts' || e.key === 'force_sync') loadDashboardData();
+-    };
+-    window.addEventListener('storage', handleStorage);
+-    
+-    return () => {
+-      clearInterval(interval);
+-      window.removeEventListener('storage', handleStorage);
+-    };
++      const sortedAlerts = [...(alertsData || [])].sort((a: any, b: any) => {
++        const dateA = new Date(a.createdAt || a.detectedAt || 0).getTime();
++        const dateB = new Date(b.createdAt || b.detectedAt || 0).getTime();
++        return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
++      });
++
++      setAlerts(sortedAlerts);
++      setDevices(devicesData || []);
++      setUsers(usersData || []);
++    } catch (err) {
++      setError('Failed to load dashboard data. Please retry.');
++    } finally {
++      setLoading(false);
++    }
+   }, []);
+ 
++  useEffect(() => {
++    loadDashboardData();
++    const interval = setInterval(loadDashboardData, 30000);
++    return () => clearInterval(interval);
++  }, [loadDashboardData]);
++
++  useLiveStream({ onAlert: () => { loadDashboardData(); } });
++
+   const getDayOfWeek = (dateString?: string) => {
+     if (!dateString) return 'Mon';
+     const date = new Date(dateString);
+     if (isNaN(date.getTime())) return 'Mon';
+     return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+   };
+-  const dynamicActivityData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
++  const chartData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
+     const count = alerts.filter(a => getDayOfWeek(a.createdAt || a.detectedAt) === day).length;
+     return { label: day, value: count };
+   });
+-  const chartData = alerts.length > 0 && dynamicActivityData.some(d => d.value > 0) ? dynamicActivityData : ACTIVITY_DATA;
+   const maxActivity = Math.max(...chartData.map(d => d.value), 1);
+-  const activeCount = alerts.length > 0 ? alerts.filter((a: any) => ['ACTIVE', 'ACKNOWLEDGED', 'RESPONDING', 'ESCALATED'].includes(a.status)).length : 12;
++  const hasChartData = chartData.some(d => d.value > 0);
++  const activeCount = alerts.filter((a: any) => ['ACTIVE', 'ACKNOWLEDGED', 'RESPONDING', 'ESCALATED'].includes(a.status)).length;
+ 
+   const getStatusColor = (status: string) => {
+     switch (status.toLowerCase()) {
+@@ -104,6 +89,31 @@ export const AdminDashboard = () => {
+     }
+   };
+ 
++  if (loading) {
++    return (
++      <div className="flex-1 flex items-center justify-center bg-[#EEF2FE]">
++        <div className="text-center text-gray-500">
++          <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent mx-auto mb-3" />
++          <p className="font-semibold">Loading dashboard…</p>
++        </div>
++      </div>
++    );
++  }
++
++  if (error && alerts.length === 0) {
++    return (
++      <div className="flex-1 flex items-center justify-center bg-[#EEF2FE] px-4">
++        <div className="bg-white rounded-2xl shadow-lg p-6 text-center max-w-sm w-full">
++          <AlertTriangle className="h-10 w-10 text-red-500 mx-auto mb-3" />
++          <p className="font-semibold text-gray-800 mb-4">{error}</p>
++          <Button onClick={loadDashboardData} className="bg-blue-600 hover:bg-blue-700 text-white">
++            Retry
++          </Button>
++        </div>
++      </div>
++    );
++  }
++
+   if (showDemo) {
+     return (
+       <div className="flex-1 flex flex-col relative h-full bg-[#EEF2FE]">
+@@ -155,15 +165,15 @@ export const AdminDashboard = () => {
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">New</span>
+-                <span className="font-bold text-yellow-600">{alerts.length > 0 ? alerts.filter(a => a.status === 'ACTIVE' && !a.respondedBy).length : 5}</span>
++                <span className="font-bold text-yellow-600">{alerts.filter(a => a.status === 'ACTIVE' && !a.respondedBy).length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Resolved</span>
+-                <span className="font-bold text-green-600">{alerts.length > 0 ? alerts.filter((a: any) => ['RESOLVED', 'FALSE_ALARM'].includes(a.status)).length : 312}</span>
++                <span className="font-bold text-green-600">{alerts.filter((a: any) => ['RESOLVED', 'FALSE_ALARM'].includes(a.status)).length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Total</span>
+-                <span className="font-bold text-gray-900">{alerts.length > 0 ? alerts.length : 347}</span>
++                <span className="font-bold text-gray-900">{alerts.length}</span>
+               </div>
+             </div>
+           </Card>
+@@ -182,19 +192,19 @@ export const AdminDashboard = () => {
+             <div className="space-y-2">
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Total</span>
+-                <span className="font-bold text-gray-900 text-base sm:text-lg">{devices.length > 0 ? devices.length : 48}</span>
++                <span className="font-bold text-gray-900 text-base sm:text-lg">{devices.length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Online</span>
+-                <span className="font-bold text-green-600">{devices.length > 0 ? devices.filter(d => d.status === 'online').length : 45}</span>
++                <span className="font-bold text-green-600">{devices.filter(d => d.status === 'online').length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Offline</span>
+-                <span className="font-bold text-red-600">{devices.length > 0 ? devices.filter(d => d.status === 'offline').length : 3}</span>
++                <span className="font-bold text-red-600">{devices.filter(d => d.status === 'offline').length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Warning</span>
+-                <span className="font-bold text-yellow-600">{devices.length > 0 ? devices.filter(d => d.status === 'warning').length : 4}</span>
++                <span className="font-bold text-yellow-600">{devices.filter(d => d.status === 'warning').length}</span>
+               </div>
+             </div>
+           </Card>
+@@ -244,19 +254,19 @@ export const AdminDashboard = () => {
+             <div className="space-y-2">
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Total</span>
+-                <span className="font-bold text-gray-900 text-base sm:text-lg">{users.length > 0 ? users.length : 24}</span>
++                <span className="font-bold text-gray-900 text-base sm:text-lg">{users.length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Admins</span>
+-                <span className="font-bold text-purple-600">{users.length > 0 ? users.filter(u => u.role === 'admin').length : 5}</span>
++                <span className="font-bold text-purple-600">{users.filter(u => u.role === 'admin').length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Personnel</span>
+-                <span className="font-bold text-blue-600">{users.length > 0 ? users.filter(u => u.role === 'security').length : 19}</span>
++                <span className="font-bold text-blue-600">{users.filter(u => u.role === 'security').length}</span>
+               </div>
+               <div className="flex items-center justify-between">
+                 <span className="text-xs sm:text-sm text-gray-600">Active</span>
+-                <span className="font-bold text-green-600">{users.length > 0 ? users.filter(u => u.status === 'active').length : 22}</span>
++                <span className="font-bold text-green-600">{users.filter(u => u.status === 'active').length}</span>
+               </div>
+             </div>
+           </Card>
+@@ -283,10 +293,14 @@ export const AdminDashboard = () => {
+                   </tr>
+                 </thead>
+                 <tbody>
+-                {(alerts.length > 0 ? alerts.slice(0, 5) : RECENT_ALERTS).map((alert) => {
++                {alerts.length === 0 ? (
++                  <tr>
++                    <td colSpan={6} className="py-8 text-center text-gray-400 font-semibold">No alerts yet.</td>
++                  </tr>
++                ) : alerts.slice(0, 5).map((alert) => {
+                   const device = devices.find((d: any) => d.id === alert.sensorId);
+-                  const pm25 = alert.pm25 ?? device?.pm25 ?? (alert.status === 'new' || alert.status === 'ACTIVE' ? 45 : 12);
+-                  const voc = alert.voc ?? device?.voc ?? (alert.status === 'new' || alert.status === 'ACTIVE' ? 1.2 : 0.3);
++                  const pm25 = alert.pm25 ?? device?.pm25 ?? '—';
++                  const voc = alert.voc ?? device?.voc ?? '—';
+                   const loc = alert.floor ? `${alert.floor} — ${alert.location}` : alert.location;
+ 
+                   return (
+@@ -325,7 +339,7 @@ export const AdminDashboard = () => {
+                 </div>
+                 <div className="flex-1">
+                   <div className="text-xs text-gray-500">Acknowledged</div>
+-                  <div className="font-bold text-gray-900 text-lg">{alerts.length > 0 ? alerts.filter((a: any) => a.status === 'ACKNOWLEDGED').length : 325}</div>
++                  <div className="font-bold text-gray-900 text-lg">{alerts.filter((a: any) => a.status === 'ACKNOWLEDGED').length}</div>
+                 </div>
+               </div>
+               <div className="flex items-center gap-3">
+@@ -334,7 +348,7 @@ export const AdminDashboard = () => {
+                 </div>
+                 <div className="flex-1">
+                   <div className="text-xs text-gray-500">Responding Now</div>
+-                  <div className="font-bold text-gray-900 text-lg">{alerts.length > 0 ? alerts.filter(a => a.status === 'RESPONDING').length : 7}</div>
++                  <div className="font-bold text-gray-900 text-lg">{alerts.filter(a => a.status === 'RESPONDING').length}</div>
+                 </div>
+               </div>
+               <div className="flex items-center gap-3">
+@@ -353,14 +367,12 @@ export const AdminDashboard = () => {
+                 <div className="flex-1">
+                   <div className="text-xs text-gray-500">Top Responder</div>
+                   <div className="font-semibold text-gray-900 text-sm">
+-                    {alerts.length > 0
+-                      ? Object.keys(
+-                          alerts.reduce((acc: Record<string, number>, alert: any) => {
+-                            if (alert.respondedBy) acc[alert.respondedBy] = (acc[alert.respondedBy] || 0) + 1;
+-                            return acc;
+-                          }, {} as Record<string, number>)
+-                        ).reduce((a, b) => (alerts.filter((al: any) => al.respondedBy === a).length > alerts.filter((al: any) => al.respondedBy === b).length ? a : b), 'Admin')
+-                      : 'Admin'}
++                    {Object.keys(
++                      alerts.reduce((acc: Record<string, number>, alert: any) => {
++                        if (alert.respondedBy) acc[alert.respondedBy] = (acc[alert.respondedBy] || 0) + 1;
++                        return acc;
++                      }, {} as Record<string, number>)
++                    ).reduce((a, b) => (alerts.filter((al: any) => al.respondedBy === a).length > alerts.filter((al: any) => al.respondedBy === b).length ? a : b), '—')}
+                   </div>
+                 </div>
+               </div>
+@@ -418,23 +430,30 @@ export const AdminDashboard = () => {
+               <h3 className="font-bold text-gray-900">Alert Activity</h3>
+               <TrendingUp className="h-4 w-4 text-gray-400" />
+             </div>
+-            <div className="space-y-2">
+-              <div className="text-xs text-gray-500 mb-3">This Week</div>
+-              {chartData.map((item, idx) => (
+-                <div key={idx} className="flex items-center gap-2">
+-                  <span className="text-xs text-gray-600 w-8">{item.label}</span>
+-                  <div className="flex-1 bg-gray-100 rounded-full h-6 relative overflow-hidden">
+-                    <div
+-                      className="bg-blue-500 h-full rounded-full transition-all duration-1000 ease-out"
+-                      style={{ width: `${(item.value / maxActivity) * 100}%` }}
+-                    />
+-                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-700">
+-                      {item.value}
+-                    </span>
++            {hasChartData ? (
++              <div className="space-y-2">
++                <div className="text-xs text-gray-500 mb-3">This Week</div>
++                {chartData.map((item, idx) => (
++                  <div key={idx} className="flex items-center gap-2">
++                    <span className="text-xs text-gray-600 w-8">{item.label}</span>
++                    <div className="flex-1 bg-gray-100 rounded-full h-6 relative overflow-hidden">
++                      <div
++                        className="bg-blue-500 h-full rounded-full transition-all duration-1000 ease-out"
++                        style={{ width: `${(item.value / maxActivity) * 100}%` }}
++                      />
++                      <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-700">
++                        {item.value}
++                      </span>
++                    </div>
+                   </div>
+-                </div>
+-              ))}
+-            </div>
++                ))}
++              </div>
++            ) : (
++              <div className="flex flex-col items-center justify-center h-32 text-gray-400">
++                <TrendingUp className="h-8 w-8 mb-2 opacity-30" />
++                <p className="text-sm font-semibold">No data yet</p>
++              </div>
++            )}
+           </Card>
+         </div>
+       </div>

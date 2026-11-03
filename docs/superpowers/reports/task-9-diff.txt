@@ -1,0 +1,65 @@
+diff --git a/backend/routes/devices.js b/backend/routes/devices.js
+index 7d9247b..7c72894 100644
+--- a/backend/routes/devices.js
++++ b/backend/routes/devices.js
+@@ -2,6 +2,7 @@ const express = require('express');
+ const { v4: uuidv4 } = require('uuid');
+ const store = require('../db/store');
+ const { requireAuth, requireAdmin } = require('../middleware/auth');
++const { generateApiKey } = require('../utils/apiKey');
+ 
+ const router = express.Router();
+ 
+@@ -93,4 +94,52 @@ router.post('/:id/recalibrate', requireAdmin, (req, res) => {
+   res.json({ message: 'Recalibration started' });
+ });
+ 
++// Create a device (admin) — returns the generated apiKey once
++router.post('/', requireAdmin, (req, res) => {
++  const { name, location, floor } = req.body || {};
++  if (!name) return res.status(400).json({ message: 'name is required' });
++  const now = new Date().toISOString();
++  const device = store.insert('devices', {
++    id: req.body.id || `D-${uuidv4().slice(0, 8)}`,
++    name,
++    location: location || null,
++    floor: floor || null,
++    status: 'offline',
++    pm25: 0,
++    voc: 0,
++    temperature: null,
++    humidity: null,
++    lastUpdate: now,
++    lastSeen: 'Never',
++    responseTime: 'N/A',
++    signalStrength: 0,
++    battery: 100,
++    firmware: req.body.firmware || 'v1.0.0',
++    powerStatus: 'Battery',
++    networkSignal: 'None',
++    issue: null,
++    apiKey: generateApiKey(),
++    pm25Threshold: req.body.pm25Threshold ?? null,
++    vocThreshold: req.body.vocThreshold ?? null,
++    updatedAt: now,
++  });
++  res.status(201).json(device);
++});
++
++// Rotate a device's API key (admin)
++router.post('/:id/rotate-key', requireAdmin, (req, res) => {
++  const device = store.findById('devices', req.params.id);
++  if (!device) return res.status(404).json({ message: 'Device not found' });
++  const updated = store.update('devices', req.params.id, { apiKey: generateApiKey() });
++  res.json({ id: updated.id, apiKey: updated.apiKey });
++});
++
++// Recent readings for a device (auth) — index-backed time series
++router.get('/:id/readings', requireAuth, (req, res) => {
++  const device = store.findById('devices', req.params.id);
++  if (!device) return res.status(404).json({ message: 'Device not found' });
++  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 1000);
++  res.json(store.recentReadings(req.params.id, limit));
++});
++
+ module.exports = router;

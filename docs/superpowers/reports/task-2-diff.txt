@@ -1,0 +1,51 @@
+diff --git a/backend/db/store.js b/backend/db/store.js
+index 3604452..64b6736 100644
+--- a/backend/db/store.js
++++ b/backend/db/store.js
+@@ -12,6 +12,11 @@ function getDb() {
+     db.exec('PRAGMA journal_mode = WAL');
+     db.exec('PRAGMA foreign_keys = ON');
+     createSchema();
++    const { runMigrations } = require('./migrations');
++    runMigrations(db);
++    db.exec('CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(createdAt)');
++    db.exec('CREATE INDEX IF NOT EXISTS idx_logs_device ON logs(deviceId)');
++    db.exec('CREATE INDEX IF NOT EXISTS idx_logs_time ON logs(timestamp)');
+     if (isNew) {
+       const { seed } = require('./seed');
+       seed(db);
+@@ -131,6 +136,13 @@ function findOne(table, predicate) {
+   return findAll(table).find(predicate) || null;
+ }
+ 
++function recentReadings(deviceId, limit = 100) {
++  const rows = getDb()
++    .prepare('SELECT * FROM sensor_readings WHERE deviceId = ? ORDER BY recordedAt DESC LIMIT ?')
++    .all(deviceId, limit);
++  return rows.map(deserialize);
++}
++
+ function insert(table, item) {
+   const row = serialize(item);
+   const keys = Object.keys(row);
+@@ -140,8 +152,13 @@ function insert(table, item) {
+   return findById(table, item.id);
+ }
+ 
++const TABLES_WITH_UPDATED_AT = new Set(['devices']);
++
+ function update(table, id, changes) {
+-  const row = serialize(changes);
++  const withStamp = TABLES_WITH_UPDATED_AT.has(table)
++    ? { ...changes, updatedAt: new Date().toISOString() }
++    : changes;
++  const row = serialize(withStamp);
+   const entries = Object.entries(row);
+   if (!entries.length) return findById(table, id);
+   const set = entries.map(([k]) => `${k} = ?`).join(', ');
+@@ -208,4 +225,4 @@ function deserialize(row) {
+   return out;
+ }
+ 
+-module.exports = { findAll, findById, findOne, insert, update, remove, clearTable, getSettings, setSettings };
++module.exports = { findAll, findById, findOne, insert, update, remove, clearTable, getSettings, setSettings, recentReadings };

@@ -1,0 +1,117 @@
+diff --git a/src/app/pages/SensorDetail.tsx b/src/app/pages/SensorDetail.tsx
+index 881a836..fa6dd4a 100644
+--- a/src/app/pages/SensorDetail.tsx
++++ b/src/app/pages/SensorDetail.tsx
+@@ -4,7 +4,8 @@ import { Badge } from '../components/ui/badge';
+ import { Button } from '../components/ui/button';
+ import { useParams, useNavigate } from 'react-router';
+ import { ArrowLeft, Radio, MapPin, Clock, Activity, AlertTriangle, CheckCircle } from 'lucide-react';
+-import { devicesApi } from '../services/api';
++import { devicesApi, readingsApi, type Reading } from '../services/api';
++import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+ 
+ interface SensorData {
+   id: string;
+@@ -27,6 +28,12 @@ export const SensorDetail = () => {
+   const navigate = useNavigate();
+   const [sensor, setSensor] = useState<SensorData | null>(null);
+   const [loading, setLoading] = useState(true);
++  const [readings, setReadings] = useState<Reading[]>([]);
++
++  useEffect(() => {
++    if (!id) return;
++    readingsApi.forDevice(id, 100).then(r => setReadings([...r].reverse())).catch(() => setReadings([]));
++  }, [id]);
+ 
+   useEffect(() => {
+     const fetchSensor = async () => {
+@@ -216,6 +223,30 @@ export const SensorDetail = () => {
+           </div>
+         </div>
+ 
++        {/* Sensor Readings Chart */}
++        <div>
++          <h2 className="font-bold mb-3 text-white text-lg">Sensor Readings (last 100)</h2>
++          <Card className="p-6 bg-white shadow-lg rounded-2xl border-0">
++            {readings.length > 0 ? (
++              <ResponsiveContainer width="100%" height={240}>
++                <LineChart data={readings.map(r => ({
++                  t: new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
++                  pm25: r.pm25, voc: r.voc,
++                }))}>
++                  <CartesianGrid strokeDasharray="3 3" />
++                  <XAxis dataKey="t" minTickGap={24} />
++                  <YAxis />
++                  <Tooltip />
++                  <Line type="monotone" dataKey="pm25" stroke="#ef4444" dot={false} name="PM2.5" />
++                  <Line type="monotone" dataKey="voc" stroke="#3b82f6" dot={false} name="VOC" />
++                </LineChart>
++              </ResponsiveContainer>
++            ) : (
++              <p className="text-sm text-muted-foreground">No readings yet for this device.</p>
++            )}
++          </Card>
++        </div>
++
+         {/* Diagnostics */}
+         <div>
+           <h2 className="font-bold mb-3 text-white text-lg">Diagnostics</h2>
+diff --git a/src/app/pages/admin/AdminDeviceDetail.tsx b/src/app/pages/admin/AdminDeviceDetail.tsx
+index f4eb8d3..3af785c 100644
+--- a/src/app/pages/admin/AdminDeviceDetail.tsx
++++ b/src/app/pages/admin/AdminDeviceDetail.tsx
+@@ -43,7 +43,8 @@ import {
+   AlertDialogTitle,
+   AlertDialogTrigger,
+ } from '../../components/ui/alert-dialog';
+-import { devicesApi } from '../../services/api';
++import { devicesApi, readingsApi, type Reading } from '../../services/api';
++import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+ 
+ export const AdminDeviceDetail = () => {
+   const navigate = useNavigate();
+@@ -117,6 +118,12 @@ export const AdminDeviceDetail = () => {
+   });
+ 
+   const [events, setEvents] = useState<any[]>([]);
++  const [readings, setReadings] = useState<Reading[]>([]);
++
++  useEffect(() => {
++    if (!id) return;
++    readingsApi.forDevice(id, 100).then(r => setReadings([...r].reverse())).catch(() => setReadings([]));
++  }, [id]);
+ 
+   const addLocalEvent = (title: string, description: string) => {
+     setEvents(prev => [{
+@@ -464,6 +471,31 @@ export const AdminDeviceDetail = () => {
+           </div>
+         </Card>
+ 
++        {/* Sensor Readings Chart */}
++        <Card className="p-5 bg-white shadow-lg rounded-xl border-0">
++          <div className="flex items-center gap-2 mb-4">
++            <Activity className="h-5 w-5 text-blue-600" />
++            <h3 className="text-lg font-bold text-gray-900">Sensor Readings (last 100)</h3>
++          </div>
++          {readings.length > 0 ? (
++            <ResponsiveContainer width="100%" height={240}>
++              <LineChart data={readings.map(r => ({
++                t: new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
++                pm25: r.pm25, voc: r.voc,
++              }))}>
++                <CartesianGrid strokeDasharray="3 3" />
++                <XAxis dataKey="t" minTickGap={24} />
++                <YAxis />
++                <Tooltip />
++                <Line type="monotone" dataKey="pm25" stroke="#ef4444" dot={false} name="PM2.5" />
++                <Line type="monotone" dataKey="voc" stroke="#3b82f6" dot={false} name="VOC" />
++              </LineChart>
++            </ResponsiveContainer>
++          ) : (
++            <p className="text-sm text-muted-foreground">No readings yet for this device.</p>
++          )}
++        </Card>
++
+         {/* Device Event History (Moved up to Main Column) */}
+         <Card className="p-5 bg-white shadow-lg rounded-xl border-0">
+           <div className="flex items-center gap-2 mb-4">

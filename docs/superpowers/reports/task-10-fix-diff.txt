@@ -1,0 +1,117 @@
+diff --git a/backend/routes/analytics.js b/backend/routes/analytics.js
+index 11d0286..393247d 100644
+--- a/backend/routes/analytics.js
++++ b/backend/routes/analytics.js
+@@ -4,6 +4,23 @@ const { requireAdmin } = require('../middleware/auth');
+ 
+ const router = express.Router();
+ 
++// Per-weekday alert counts for the current week (Mon..Sun)
++function weeklyAlertCounts() {
++  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
++  const today = new Date();
++  const dayOfWeek = today.getDay();
++  const monday = new Date(today);
++  monday.setHours(0, 0, 0, 0);
++  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
++  const alerts = store.findAll('alerts');
++  return days.map((day, i) => {
++    const start = new Date(monday); start.setDate(monday.getDate() + i);
++    const end = new Date(start); end.setDate(start.getDate() + 1);
++    const count = alerts.filter(a => { const t = new Date(a.createdAt); return t >= start && t < end; }).length;
++    return { id: i + 1, day, date: start.getDate(), count };
++  });
++}
++
+ // GET /api/analytics/summary
+ router.get('/summary', requireAdmin, (req, res) => {
+   const alerts = store.findAll('alerts');
+@@ -33,24 +50,7 @@ router.get('/summary', requireAdmin, (req, res) => {
+ 
+ // GET /api/analytics/weekly — detections per day this week
+ router.get('/weekly', requireAdmin, (req, res) => {
+-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+-  const today = new Date();
+-  const dayOfWeek = today.getDay();
+-  const monday = new Date(today);
+-  monday.setHours(0, 0, 0, 0);
+-  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+-
+-  const alerts = store.findAll('alerts');
+-  const data = days.map((label, i) => {
+-    const start = new Date(monday); start.setDate(monday.getDate() + i);
+-    const end = new Date(start); end.setDate(start.getDate() + 1);
+-    const count = alerts.filter(a => {
+-      const t = new Date(a.createdAt);
+-      return t >= start && t < end;
+-    }).length;
+-    return { id: i + 1, day: label, date: start.getDate(), count };
+-  });
+-  res.json(data);
++  res.json(weeklyAlertCounts());
+ });
+ 
+ // GET /api/analytics/reports
+@@ -58,6 +58,7 @@ router.get('/reports', requireAdmin, (req, res) => {
+   const alerts = store.findAll('alerts');
+   const readings = store.findAll('sensor_readings');
+   const devices = store.findAll('devices');
++  const users = store.findAll('users');
+ 
+   const totalDetections = alerts.length;
+   const confirmedIncidents = alerts.filter(a => a.status === 'RESOLVED' || a.status === 'RESPONDING').length;
+@@ -86,7 +87,7 @@ router.get('/reports', requireAdmin, (req, res) => {
+       successRate: totalDetections ? `${Math.round((confirmedIncidents / totalDetections) * 100)}%` : '—',
+       period: 'This week',
+     },
+-    detectionTrend: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => ({ id: i + 1, day, count: 0 })),
++    detectionTrend: weeklyAlertCounts().map(({ id, day, count }) => ({ id, day, count })),
+     highRiskAreas,
+     peakTimePeriods: buckets.map((time, i) => ({ time, incidents: peakCounts[i] })),
+     devicePerformance: devices.map(d => ({
+@@ -95,7 +96,7 @@ router.get('/reports', requireAdmin, (req, res) => {
+       offlineEvents: d.status === 'offline' ? 1 : 0,
+       avgResponse: d.responseTime || '—',
+     })),
+-    userActivity: store.findAll('users').filter(u => u.role === 'security').map(u => ({
++    userActivity: users.filter(u => u.role === 'security').map(u => ({
+       name: u.name,
+       handled: alerts.filter(a => a.respondedBy === u.name || a.respondedBy === u.username).length,
+       avgAck: '—',
+@@ -111,6 +112,8 @@ router.get('/reports', requireAdmin, (req, res) => {
+ // GET /api/analytics/qos
+ router.get('/qos', requireAdmin, (req, res) => {
+   const devices = store.findAll('devices');
++  const allAlerts = store.findAll('alerts');
++  const allReadings = store.findAll('sensor_readings');
+   const onlineDevices = devices.filter(d => d.status === 'online').length;
+ 
+   res.json({
+@@ -122,13 +125,13 @@ router.get('/qos', requireAdmin, (req, res) => {
+       uptime: '99.7%',
+     },
+     summaryMetrics: [
+-      { label: 'Alerts Today', value: String(store.findAll('alerts').filter(a => {
++      { label: 'Alerts Today', value: String(allAlerts.filter(a => {
+         const t = new Date(a.createdAt); const now = new Date();
+         return t.toDateString() === now.toDateString();
+       }).length) },
+-      { label: 'Active Alerts', value: String(store.findAll('alerts').filter(a => a.status === 'ACTIVE').length) },
++      { label: 'Active Alerts', value: String(allAlerts.filter(a => a.status === 'ACTIVE').length) },
+       { label: 'Offline Devices', value: String(devices.filter(d => d.status === 'offline').length) },
+-      { label: 'Readings (24h)', value: String(store.findAll('sensor_readings').filter(r => Date.now() - new Date(r.recordedAt).getTime() < 86400000).length) },
++      { label: 'Readings (24h)', value: String(allReadings.filter(r => Date.now() - new Date(r.recordedAt).getTime() < 86400000).length) },
+     ],
+     activeIssues: devices
+       .filter(d => d.status !== 'online' || d.issue)
+@@ -141,8 +144,9 @@ router.get('/qos', requireAdmin, (req, res) => {
+         canResolve: d.status === 'offline',
+         canInvestigate: d.status !== 'offline',
+       })),
++    // 'response' key retained for frontend shape compatibility; value is the recent PM2.5 reading (µg/m³)
+     performanceData: (() => {
+-      const readings = store.findAll('sensor_readings')
++      const readings = allReadings
+         .sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt)).slice(-12);
+       return readings.map((r, i) => ({ id: i + 1, time: new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), response: r.pm25 }));
+     })(),

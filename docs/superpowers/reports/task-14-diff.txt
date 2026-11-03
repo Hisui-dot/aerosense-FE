@@ -1,0 +1,326 @@
+diff --git a/src/app/pages/Alerts.tsx b/src/app/pages/Alerts.tsx
+index 445c8ee..ce3613e 100644
+--- a/src/app/pages/Alerts.tsx
++++ b/src/app/pages/Alerts.tsx
+@@ -1,4 +1,4 @@
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useCallback } from 'react';
+ import { Card } from '../components/ui/card';
+ import { Button } from '../components/ui/button';
+ import { Badge } from '../components/ui/badge';
+@@ -13,6 +13,7 @@ import {
+   SelectValue,
+ } from '../components/ui/select';
+ import { alertsApi } from '../services/api';
++import { useLiveStream } from '../hooks/useLiveStream';
+ 
+ interface Alert {
+   id: string;
+@@ -32,56 +33,41 @@ export const Alerts = () => {
+ 
+   const [alerts, setAlerts] = useState<Alert[]>([]);
+ 
++  const fetchAlerts = useCallback(async () => {
++    try {
++      const data = await alertsApi.getAll().catch(() => []);
++      const mapped = data.map((a: any) => {
++        let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
++        if (isNaN(dateObj.getTime())) dateObj = new Date();
++        return {
++          id: a.id,
++          location: `${a.floor || 'Unknown'} - ${a.location || 'Unknown'}`,
++          status: a.status === 'ACTIVE' ? 'NEW' : a.status === 'ACKNOWLEDGED' || a.status === 'RESPONDING' ? 'ACK' : 'RESOLVED',
++          detectedAt: a.detectedAt || 'Unknown',
++          sensorId: a.sensorId || 'Unknown',
++          date: a.createdAt ? a.createdAt.split('T')[0] : 'Unknown',
++          timestampValue: dateObj.getTime(),
++        } as Alert;
++      });
++      setAlerts(mapped);
++    } catch (error) {
++      toast.error('Failed to load alerts');
++    }
++  }, []);
++
++  useLiveStream({ onAlert: () => { fetchAlerts(); } });
++
+   useEffect(() => {
+-    const fetchAlerts = async () => {
+-      try {
+-        const data = await alertsApi.getAll().catch(() => []);
+-        const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-        const combined = Array.from(new Map([...mockAlerts, ...data].map((a: any) => [a.id, a])).values());
+-        const mapped = combined.map((a: any) => {
+-          let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
+-          if (isNaN(dateObj.getTime())) dateObj = new Date();
+-          return {
+-            id: a.id,
+-            location: `${a.floor || 'Unknown'} - ${a.location || 'Unknown'}`,
+-            status: a.status === 'ACTIVE' ? 'NEW' : a.status === 'ACKNOWLEDGED' || a.status === 'RESPONDING' ? 'ACK' : 'RESOLVED',
+-            detectedAt: a.detectedAt || 'Unknown',
+-            sensorId: a.sensorId || 'Unknown',
+-            date: a.createdAt ? a.createdAt.split('T')[0] : 'Unknown',
+-            timestampValue: dateObj.getTime(),
+-          } as Alert;
+-        });
+-        setAlerts(mapped);
+-      } catch (error) {
+-        toast.error('Failed to load alerts');
+-      }
+-    };
+     fetchAlerts();
+-    const interval = setInterval(fetchAlerts, 5000);
+-    
+-    const handleStorage = (e: StorageEvent) => {
+-      if (e.key === 'mock_alerts' || e.key === 'force_sync') fetchAlerts();
+-    };
+-    window.addEventListener('storage', handleStorage);
+-    
++    const interval = setInterval(fetchAlerts, 30000);
+     return () => {
+       clearInterval(interval);
+-      window.removeEventListener('storage', handleStorage);
+     };
+-  }, []);
++  }, [fetchAlerts]);
+ 
+   const handleAcknowledge = async (id: string) => {
+     try {
+-      const mocks = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const isMockOnly = mocks.some((m: any) => m.id === id);
+-
+-      if (isMockOnly) {
+-        const updated = mocks.map((m: any) => m.id === id ? { ...m, status: 'ACKNOWLEDGED' } : m);
+-        localStorage.setItem('mock_alerts', JSON.stringify(updated));
+-      } else {
+-        await (alertsApi as any).acknowledge(id);
+-      }
+-      localStorage.setItem('force_sync', Date.now().toString());
++      await (alertsApi as any).acknowledge(id);
+       setAlerts(prevAlerts =>
+         prevAlerts.map(alert =>
+           alert.id === id ? { ...alert, status: 'ACK' as const } : alert
+diff --git a/src/app/pages/Dashboard.tsx b/src/app/pages/Dashboard.tsx
+index f3aa64d..add8aa4 100644
+--- a/src/app/pages/Dashboard.tsx
++++ b/src/app/pages/Dashboard.tsx
+@@ -1,4 +1,4 @@
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useCallback } from 'react';
+ import {
+   AlertCircle,
+   CheckCircle,
+@@ -15,6 +15,7 @@ import { toast } from 'sonner';
+ import { useAuth } from '../context/AuthContext';
+ import { useNavigate } from 'react-router';
+ import { alertsApi, devicesApi } from '../services/api';
++import { useLiveStream } from '../hooks/useLiveStream';
+ 
+ /* ─── types ─────────────────────────────────────────────────────── */
+ interface Alert {
+@@ -41,32 +42,6 @@ interface ResponseHistoryItem {
+   notes: string;
+ }
+ 
+-/* ─── seed data ──────────────────────────────────────────────────── */
+-const INITIAL_ALERTS: Alert[] = [
+-  {
+-    id: 'a1', type: 'Vaping Detected', location: '2nd Floor', room: 'Boys Restroom',
+-    timeDetected: '10:02 AM', status: 'new', priority: 'high',
+-    pm25: 85, voc: 420, pm25Max: 100, vocMax: 500, confidence: 94,
+-  },
+-  {
+-    id: 'a2', type: 'Vaping Detected', location: '3rd Floor', room: 'Girls Restroom',
+-    timeDetected: '10:08 AM', status: 'new', priority: 'high',
+-    pm25: 72, voc: 310, pm25Max: 100, vocMax: 500, confidence: 88,
+-  },
+-  {
+-    id: 'a3', type: 'Vaping Detected', location: '1st Floor', room: 'Hallway East Wing',
+-    timeDetected: '9:55 AM', status: 'acknowledged', priority: 'medium',
+-    assignedResponder: 'Officer Johnson',
+-    pm25: 55, voc: 185, pm25Max: 100, vocMax: 500, confidence: 76,
+-  },
+-];
+-
+-const INITIAL_HISTORY: ResponseHistoryItem[] = [
+-  { id: 'h1', location: 'Cafeteria — Section B',        timeResolved: '9:40 AM',          finalStatus: 'Confirmed',   notes: 'Vaping confirmed, student escorted to office' },
+-  { id: 'h2', location: '4th Floor — Faculty Restroom', timeResolved: '9:25 AM',          finalStatus: 'False Alarm', notes: 'Steam from hot water' },
+-  { id: 'h3', location: '2nd Floor — Library Section C',timeResolved: 'Yesterday 3:15 PM',finalStatus: 'Confirmed',   notes: 'Vaping device confiscated' },
+-];
+-
+ /* ─── style maps ─────────────────────────────────────────────────── */
+ const PRIORITY_COLORS: Record<string, string> = {
+   high:   'bg-red-100 text-red-700',
+@@ -113,8 +88,8 @@ function ProgressBar({ value, max, safeThreshold, label, unit }: {
+ export const Dashboard = () => {
+   const { user } = useAuth();
+   const navigate = useNavigate();
+-  const [alerts,      setAlerts]      = useState<Alert[]>(INITIAL_ALERTS);
+-  const [history, setHistory] = useState<ResponseHistoryItem[]>(INITIAL_HISTORY);
++  const [alerts,      setAlerts]      = useState<Alert[]>([]);
++  const [history, setHistory] = useState<ResponseHistoryItem[]>([]);
+ 
+   const officerName = user?.username
+     ? 'Officer ' + user.username.charAt(0).toUpperCase() + user.username.slice(1)
+@@ -132,97 +107,79 @@ export const Dashboard = () => {
+   ).length;
+   const resolvedToday = history.filter(h => !h.timeResolved.includes('Yesterday')).length;
+ 
+-  useEffect(() => {
+-    const fetchAlerts = async () => {
+-      try {
+-        const [alertsData, devicesData] = await Promise.all([
+-          alertsApi.getAll(),
+-          devicesApi.getAll().catch(() => [])
+-        ]);
+-
+-        const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-        const combinedAlerts = Array.from(new Map([...mockAlerts, ...alertsData].map((a: any) => [a.id, a])).values());
+-
+-        const mappedAlerts = combinedAlerts.map((a: any) => {
+-          const device = devicesData.find((d: any) => d.id === a.sensorId);
+-          
+-          let precision = null;
+-          try {
+-            const stored = localStorage.getItem(`alert_precision_${a.id}`);
+-            if (stored) precision = JSON.parse(stored);
+-          } catch (e) {}
+-
+-          const pm25Val = precision?.pm25 ?? a.pm25 ?? device?.pm25 ?? 45;
+-          const vocVal = precision?.voc ?? a.voc ?? device?.voc ?? 1.2;
+-          const confVal = precision?.confidence ?? a.confidence ?? 94;
++  const fetchAlerts = useCallback(async () => {
++    try {
++      const [alertsData, devicesData] = await Promise.all([
++        alertsApi.getAll(),
++        devicesApi.getAll().catch(() => [])
++      ]);
++
++      const mappedAlerts = alertsData.map((a: any) => {
++        const device = devicesData.find((d: any) => d.id === a.sensorId);
++
++        const pm25Val = a.pm25 ?? device?.pm25 ?? 45;
++        const vocVal = a.voc ?? device?.voc ?? 1.2;
++        const confVal = a.confidence ?? 94;
++
++        return {
++          id: a.id,
++          type: a.type ?? 'Vaping Detected',
++          location: a.floor || 'Unknown Floor',
++          room: a.location || 'Unknown Room',
++          timeDetected: a.detectedAt || 'Just now',
++          status: a.status === 'ACTIVE' ? 'new' : (a.status === 'RESPONDING' || a.status === 'ESCALATED') ? 'responding' : a.status === 'ACKNOWLEDGED' ? 'acknowledged' : 'resolved',
++          priority: a.priority || (confVal >= 95 ? 'high' : confVal >= 80 ? 'medium' : 'low'),
++          assignedResponder: a.respondedBy,
++          pm25: pm25Val,
++          voc: vocVal,
++          pm25Max: 100,
++          vocMax: 500,
++          confidence: confVal,
++        } as Alert;
++      });
++      setAlerts(mappedAlerts);
++
++      const fetchedHistory = alertsData
++        .filter((a: any) => ['RESOLVED', 'FALSE_ALARM', 'ESCALATED'].includes(a.status))
++        .map((a: any) => {
++          let noteText = 'Processed via system';
++          if (Array.isArray(a.notes) && a.notes.length > 0) {
++            noteText = a.notes[a.notes.length - 1].text;
++          } else if (typeof a.notes === 'string' && a.notes) {
++            noteText = a.notes;
++          }
++
++          let resDate = a.resolvedAt ? new Date(a.resolvedAt) : new Date();
++          if (isNaN(resDate.getTime())) resDate = new Date();
+ 
+           return {
+             id: a.id,
+-            type: precision?.type ?? a.type ?? 'Vaping Detected',
+-            location: a.floor || 'Unknown Floor',
+-            room: a.location || 'Unknown Room',
+-            timeDetected: a.detectedAt || 'Just now',
+-            status: a.status === 'ACTIVE' ? 'new' : (a.status === 'RESPONDING' || a.status === 'ESCALATED') ? 'responding' : a.status === 'ACKNOWLEDGED' ? 'acknowledged' : 'resolved',
+-            priority: a.priority || (confVal >= 95 ? 'high' : confVal >= 80 ? 'medium' : 'low'),
+-            assignedResponder: a.respondedBy,
+-            pm25: pm25Val,
+-            voc: vocVal,
+-            pm25Max: 100,
+-            vocMax: 500,
+-            confidence: confVal,
+-          } as Alert;
+-        });
+-        setAlerts(mappedAlerts);
+-
+-        const fetchedHistory = combinedAlerts
+-          .filter((a: any) => ['RESOLVED', 'FALSE_ALARM', 'ESCALATED'].includes(a.status))
+-          .map((a: any) => {
+-            let noteText = 'Processed via system';
+-            if (Array.isArray(a.notes) && a.notes.length > 0) {
+-              noteText = a.notes[a.notes.length - 1].text;
+-            } else if (typeof a.notes === 'string' && a.notes) {
+-              noteText = a.notes;
+-            }
+-            
+-            let resDate = a.resolvedAt ? new Date(a.resolvedAt) : new Date();
+-            if (isNaN(resDate.getTime())) resDate = new Date();
+-            
+-            return {
+-              id: a.id,
+-              location: `${a.floor || 'Unknown Floor'} — ${a.location || 'Unknown Room'}`,
+-              timeResolved: a.resolvedAt 
+-                ? resDate.toDateString() === new Date().toDateString()
+-                  ? resDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+-                  : resDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
+-                : resDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+-              finalStatus: a.status === 'FALSE_ALARM' ? 'False Alarm' : a.status === 'ESCALATED' ? 'Escalated' : 'Confirmed',
+-              notes: noteText,
+-            } as ResponseHistoryItem;
+-          });
+-
+-        setHistory(() => {
+-          const historyIds = fetchedHistory.map((h: any) => h.id);
+-          const hardcoded = INITIAL_HISTORY.filter(h => !historyIds.includes(h.id));
+-          return [...fetchedHistory, ...hardcoded];
++            location: `${a.floor || 'Unknown Floor'} — ${a.location || 'Unknown Room'}`,
++            timeResolved: a.resolvedAt
++              ? resDate.toDateString() === new Date().toDateString()
++                ? resDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
++                : resDate.toLocaleDateString([], { month: 'short', day: 'numeric' })
++              : resDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
++            finalStatus: a.status === 'FALSE_ALARM' ? 'False Alarm' : a.status === 'ESCALATED' ? 'Escalated' : 'Confirmed',
++            notes: noteText,
++          } as ResponseHistoryItem;
+         });
+-      } catch (error) {
+-        console.error('Failed to sync alerts', error);
+-      }
+-    };
+ 
++      setHistory(fetchedHistory);
++    } catch (error) {
++      console.error('Failed to sync alerts', error);
++    }
++  }, []);
++
++  useLiveStream({ onAlert: () => { fetchAlerts(); } });
++
++  useEffect(() => {
+     fetchAlerts();
+-    const intervalId = setInterval(fetchAlerts, 5000);
+-    
+-    const handleStorage = (e: StorageEvent) => {
+-      if (e.key === 'mock_alerts' || e.key === 'force_sync') fetchAlerts();
+-    };
+-    window.addEventListener('storage', handleStorage);
+-    
++    const intervalId = setInterval(fetchAlerts, 30000);
+     return () => {
+       clearInterval(intervalId);
+-      window.removeEventListener('storage', handleStorage);
+     };
+-  }, []);
++  }, [fetchAlerts]);
+ 
+   return (
+     <div className="min-h-screen bg-[#EEF2FE] pb-24">

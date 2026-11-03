@@ -1,0 +1,106 @@
+diff --git a/backend/db/migrations.js b/backend/db/migrations.js
+new file mode 100644
+index 0000000..b41e987
+--- /dev/null
++++ b/backend/db/migrations.js
+@@ -0,0 +1,55 @@
++function columnExists(db, table, column) {
++  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
++  return cols.some(c => c.name === column);
++}
++
++function ensureColumn(db, table, column, typeDef) {
++  if (!columnExists(db, table, column)) {
++    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${typeDef}`);
++  }
++}
++
++function runMigrations(db) {
++  db.exec(`
++    CREATE TABLE IF NOT EXISTS schema_migrations (
++      version INTEGER PRIMARY KEY,
++      appliedAt TEXT
++    );
++
++    CREATE TABLE IF NOT EXISTS sensor_readings (
++      id          TEXT PRIMARY KEY,
++      deviceId    TEXT NOT NULL,
++      pm25        REAL,
++      voc         REAL,
++      temperature REAL,
++      humidity    REAL,
++      recordedAt  TEXT NOT NULL,
++      createdAt   TEXT NOT NULL,
++      FOREIGN KEY (deviceId) REFERENCES devices(id) ON DELETE CASCADE
++    );
++
++    CREATE INDEX IF NOT EXISTS idx_readings_device_time ON sensor_readings(deviceId, recordedAt DESC);
++    CREATE INDEX IF NOT EXISTS idx_readings_time        ON sensor_readings(recordedAt DESC);
++  `);
++
++  ensureColumn(db, 'devices', 'apiKey', 'TEXT');
++  ensureColumn(db, 'devices', 'pm25Threshold', 'REAL');
++  ensureColumn(db, 'devices', 'vocThreshold', 'REAL');
++  ensureColumn(db, 'devices', 'updatedAt', 'TEXT');
++
++  ensureColumn(db, 'alerts', 'deviceId', 'TEXT');
++  ensureColumn(db, 'alerts', 'pm25', 'REAL');
++  ensureColumn(db, 'alerts', 'voc', 'REAL');
++  ensureColumn(db, 'alerts', 'source', "TEXT DEFAULT 'manual'");
++
++  // Create indexes on alerts columns after they have been added
++  db.exec(`
++    CREATE INDEX IF NOT EXISTS idx_alerts_device ON alerts(deviceId);
++    CREATE INDEX IF NOT EXISTS idx_alerts_sensor ON alerts(sensorId);
++  `);
++
++  const stamp = new Date().toISOString();
++  db.prepare('INSERT OR IGNORE INTO schema_migrations (version, appliedAt) VALUES (?, ?)').run(1, stamp);
++}
++
++module.exports = { runMigrations, columnExists };
+diff --git a/backend/db/migrations.test.js b/backend/db/migrations.test.js
+new file mode 100644
+index 0000000..42cc179
+--- /dev/null
++++ b/backend/db/migrations.test.js
+@@ -0,0 +1,39 @@
++const { test } = require('node:test');
++const assert = require('node:assert');
++const { DatabaseSync } = require('node:sqlite');
++const { runMigrations, columnExists } = require('./migrations');
++
++function baseDb() {
++  const db = new DatabaseSync(':memory:');
++  db.exec(`
++    CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT, pm25 REAL, voc REAL);
++    CREATE TABLE alerts  (id TEXT PRIMARY KEY, status TEXT, sensorId TEXT);
++  `);
++  return db;
++}
++
++test('creates sensor_readings table', () => {
++  const db = baseDb();
++  runMigrations(db);
++  const row = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sensor_readings'").get();
++  assert.ok(row, 'sensor_readings should exist');
++});
++
++test('adds new columns to devices and alerts', () => {
++  const db = baseDb();
++  runMigrations(db);
++  assert.ok(columnExists(db, 'devices', 'apiKey'));
++  assert.ok(columnExists(db, 'devices', 'pm25Threshold'));
++  assert.ok(columnExists(db, 'devices', 'vocThreshold'));
++  assert.ok(columnExists(db, 'devices', 'updatedAt'));
++  assert.ok(columnExists(db, 'alerts', 'deviceId'));
++  assert.ok(columnExists(db, 'alerts', 'pm25'));
++  assert.ok(columnExists(db, 'alerts', 'voc'));
++  assert.ok(columnExists(db, 'alerts', 'source'));
++});
++
++test('is idempotent (running twice does not throw)', () => {
++  const db = baseDb();
++  runMigrations(db);
++  assert.doesNotThrow(() => runMigrations(db));
++});

@@ -1,0 +1,69 @@
+diff --git a/backend/package.json b/backend/package.json
+index c077025..5b29ce0 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -6,7 +6,8 @@
+   "scripts": {
+     "start": "node server.js",
+     "dev": "node --watch server.js",
+-    "test": "node --test"
++    "test": "node --test",
++    "simulate": "node scripts/simulate.js"
+   },
+   "dependencies": {
+     "@supabase/supabase-js": "^2.105.3",
+diff --git a/backend/scripts/README.md b/backend/scripts/README.md
+new file mode 100644
+index 0000000..0fb6aea
+--- /dev/null
++++ b/backend/scripts/README.md
+@@ -0,0 +1,11 @@
++# Telemetry simulator
++
++Posts realistic readings through the real ingestion endpoint so the dashboard
++exercises the full pipeline (storage → detection → SSE → UI).
++
++1. Start the backend: `npm run dev` (from `backend/`).
++2. Grab a device API key from the seed console output, or:
++   `node -e "console.log(require('./db/store').findAll('devices')[0].apiKey)"`
++3. Run: `npm run simulate -- <DEVICE_API_KEY> 4000`
++
++Every 8th reading crosses the vape threshold and triggers an auto-alert.
+diff --git a/backend/scripts/simulate.js b/backend/scripts/simulate.js
+new file mode 100644
+index 0000000..48b685a
+--- /dev/null
++++ b/backend/scripts/simulate.js
+@@ -0,0 +1,32 @@
++// Usage: node scripts/simulate.js <DEVICE_API_KEY> [intervalMs]
++const key = process.argv[2];
++const interval = parseInt(process.argv[3], 10) || 4000;
++const BASE = process.env.SIM_BASE || 'http://localhost:8001';
++
++if (!key) {
++  console.error('Usage: node scripts/simulate.js <DEVICE_API_KEY> [intervalMs]');
++  process.exit(1);
++}
++
++let tick = 0;
++async function post() {
++  tick++;
++  const spike = tick % 8 === 0; // every 8th reading crosses the threshold
++  const pm25 = spike ? 60 + Math.floor(Math.random() * 40) : 8 + Math.floor(Math.random() * 12);
++  const voc = spike ? 1.5 + Math.random() : 0.2 + Math.random() * 0.2;
++  try {
++    const res = await fetch(`${BASE}/api/ingest/readings`, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json', 'X-Device-Key': key },
++      body: JSON.stringify({ pm25, voc, temperature: 23 + Math.random() * 3, humidity: 45 + Math.random() * 10 }),
++    });
++    const body = await res.json();
++    console.log(`[${tick}] pm25=${pm25} voc=${voc.toFixed(2)} -> ${res.status}${body.alert ? ' ALERT' : ''}`);
++  } catch (e) {
++    console.error('post failed:', e.message);
++  }
++}
++
++console.log(`Simulating device ${key.slice(0, 8)}… every ${interval}ms against ${BASE}`);
++setInterval(post, interval);
++post();

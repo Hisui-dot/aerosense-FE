@@ -1,0 +1,1690 @@
+diff --git a/src/app/pages/AdminAlerts.tsx b/src/app/pages/AdminAlerts.tsx
+deleted file mode 100644
+index 34d7f25..0000000
+--- a/src/app/pages/AdminAlerts.tsx
++++ /dev/null
+@@ -1,856 +0,0 @@
+-import { useState, useEffect } from 'react';
+-import { useNavigate } from 'react-router';
+-import { Card } from '../../components/ui/card';
+-import { Button } from '../../components/ui/button';
+-import { Input } from '../../components/ui/input';
+-import { Label } from '../../components/ui/label';
+-import { Textarea } from '../../components/ui/textarea';
+-import {
+-  Select,
+-  SelectContent,
+-  SelectItem,
+-  SelectTrigger,
+-  SelectValue,
+-} from '../../components/ui/select';
+-import { AlertCircle, X, MapPin, Clock, User, Edit } from 'lucide-react';
+-import { toast } from 'sonner';
+-import { alertsApi, usersApi } from '../../services/api';
+-
+-interface Alert {
+-  id: string;
+-  alertId: string;
+-  type: string;
+-  location: string;
+-  timeDetected: string;
+-  status: 'new' | 'acknowledged' | 'responding' | 'resolved';
+-  priority: 'high' | 'medium' | 'low';
+-  assignedPersonnel: string;
+-  timeAcknowledged: string;
+-  timeResponding: string;
+-  timeResolved: string;
+-  responseDuration: string;
+-  responseResult: string;
+-  actionTaken: string;
+-  responseNotes: string;
+-  finalStatus: string;
+-  escalationStatus: string;
+-  photoUrl?: string | null;
+-}
+-
+-export const AdminAlerts = () => {
+-  const navigate = useNavigate();
+-  const [alerts, setAlerts] = useState<Alert[]>([]);
+-  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+-  const [showEditModal, setShowEditModal] = useState(false);
+-  const [dateFilter, setDateFilter] = useState('all');
+-  const [locationFilter, setLocationFilter] = useState('all');
+-  const [statusFilter, setStatusFilter] = useState('all');
+-  const [priorityFilter, setPriorityFilter] = useState('all');
+-  const [personnelFilter, setPersonnelFilter] = useState('all');
+-  const [typeFilter, setTypeFilter] = useState('all');
+-  const [personnelList, setPersonnelList] = useState<string[]>([]);
+-
+-  // Edit form state
+-  const [editFormData, setEditFormData] = useState({
+-    assignedPersonnel: '',
+-    priority: '',
+-    status: '',
+-    responseResult: '',
+-    actionTaken: '',
+-    responseNotes: '',
+-    finalStatus: '',
+-    adminNotes: '',
+-    reasonForEdit: '',
+-  });
+-
+-
+-  useEffect(() => {
+-    fetchAlerts();
+-    fetchPersonnel();
+-  }, []);
+-
+-  const fetchPersonnel = async () => {
+-    try {
+-      const usersData = await usersApi.getAll();
+-      const personnel = usersData.map((u: any) => u.name || u.username).filter(Boolean);
+-      
+-      // Only use actual personnel from the database
+-      setPersonnelList(Array.from(new Set(personnel)).sort() as string[]);
+-    } catch (error) {
+-      console.error('Failed to load personnel list', error);
+-    }
+-  };
+-
+-  const fetchAlerts = async () => {
+-    try {
+-      const data = await alertsApi.getAll();
+-      const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const combined = [...mockAlerts, ...data];
+-      const mappedAlerts = combined.map((alert: any) => {
+-        let actionStr = 'Pending';
+-        let notesStr = 'N/A';
+-        let resultStr = alert.status === 'FALSE_ALARM' ? 'False Alarm' : (alert.status === 'RESOLVED' ? 'Confirmed' : 'Pending');
+-        
+-        if (alert.notes && alert.notes.length > 0) {
+-          const latest = alert.notes[alert.notes.length - 1].text;
+-          if (latest.includes('Action Taken:') && latest.includes('Notes:')) {
+-            const parts = latest.split('|');
+-            const resultPart = parts.find((p: string) => p.includes('Result:'));
+-            const actionPart = parts.find((p: string) => p.includes('Action Taken:'));
+-            const notesPart = parts.find((p: string) => p.includes('Notes:'));
+-            
+-            if (resultPart) resultStr = resultPart.replace('Result:', '').trim();
+-            if (actionPart) actionStr = actionPart.replace('Action Taken:', '').trim();
+-            if (notesPart) notesStr = notesPart.replace('Notes:', '').trim();
+-          } else {
+-            actionStr = latest;
+-            notesStr = alert.notes.map((n:any) => n.text).join(' | ');
+-          }
+-        }
+-        
+-        return {
+-        id: alert.id,
+-        alertId: alert.id.includes('-') ? alert.id : `ALT-${alert.id.substring(0,6).toUpperCase()}`,
+-        type: 'Vaping Detected',
+-        location: `${alert.floor} - ${alert.location}`,
+-        timeDetected: alert.detectedAt,
+-        status: alert.status === 'ACTIVE' ? 'new' :
+-                alert.status === 'RESPONDING' ? 'responding' : 'resolved',
+-        priority: alert.priority || 'high',
+-        assignedPersonnel: alert.respondedBy || 'Pending',
+-        timeAcknowledged: alert.status !== 'ACTIVE' ? 'Acknowledged' : 'Pending',
+-        timeResponding: alert.status === 'RESPONDING' ? 'Responding' : 'Pending',
+-        timeResolved: alert.resolvedAt || 'Pending',
+-        responseDuration: alert.resolvedAt ? 'Completed' : 'Pending',
+-        responseResult: resultStr,
+-        actionTaken: actionStr,
+-        responseNotes: notesStr,
+-        finalStatus: alert.status,
+-        escalationStatus: alert.escalatedBy ? `Escalated by ${alert.escalatedBy}` : 'Not Escalated',
+-        photoUrl: alert.photoUrl,
+-      }});
+-      setAlerts(mappedAlerts as Alert[]);
+-    } catch (error) {
+-      toast.error('Failed to load alerts');
+-    }
+-  };
+-
+-  const handleApiAction = async (apiCall: Promise<any>, successMsg: string) => {
+-    try {
+-      await apiCall;
+-      toast.success(successMsg);
+-      fetchAlerts();
+-      setSelectedAlert(null);
+-    } catch (error: any) {
+-      toast.error(error?.message || 'Action failed');
+-    }
+-  };
+-
+-  // Dynamically merge personnel list + anyone already assigned to existing alerts
+-  const dynamicPersonnel = Array.from(new Set([
+-    ...personnelList,
+-    ...alerts.map(a => a.assignedPersonnel)
+-  ])).filter(p => p && p !== 'Pending').sort();
+-
+-  const filteredAlerts = alerts.filter((alert) => {
+-    if (statusFilter !== 'all' && alert.status !== statusFilter) return false;
+-    if (priorityFilter !== 'all' && alert.priority !== priorityFilter) return false;
+-    if (locationFilter !== 'all' && !alert.location.toLowerCase().includes(locationFilter.toLowerCase())) return false;
+-    if (typeFilter !== 'all' && alert.type !== typeFilter) return false;
+-    if (personnelFilter !== 'all' && alert.assignedPersonnel !== personnelFilter) return false;
+-    return true;
+-  });
+-
+-  const getPriorityColor = (priority: string) => {
+-    switch (priority) {
+-      case 'high': return 'bg-red-100 text-red-700 border-red-200';
+-      case 'medium': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+-      case 'low': return 'bg-blue-100 text-blue-700 border-blue-200';
+-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+-    }
+-  };
+-
+-  const getStatusColor = (status: string) => {
+-    switch (status) {
+-      case 'new': return 'bg-red-100 text-red-700';
+-      case 'acknowledged': return 'bg-yellow-100 text-yellow-700';
+-      case 'responding': return 'bg-blue-100 text-blue-700';
+-      case 'resolved': return 'bg-green-100 text-green-700';
+-      default: return 'bg-gray-100 text-gray-700';
+-    }
+-  };
+-
+-  const handleEditClick = () => {
+-    if (!selectedAlert) return;
+-    setEditFormData({
+-      assignedPersonnel: selectedAlert.assignedPersonnel,
+-      priority: selectedAlert.priority,
+-      status: selectedAlert.status,
+-      responseResult: selectedAlert.responseResult,
+-      actionTaken: selectedAlert.actionTaken,
+-      responseNotes: selectedAlert.responseNotes,
+-      finalStatus: selectedAlert.finalStatus,
+-      adminNotes: '',
+-      reasonForEdit: '',
+-    });
+-    setShowEditModal(true);
+-  };
+-
+-  const handleSaveChanges = async () => {
+-    if (!selectedAlert) return;
+-
+-    try {
+-      if (editFormData.assignedPersonnel !== selectedAlert.assignedPersonnel && editFormData.assignedPersonnel !== 'Pending') {
+-        await alertsApi.assign(selectedAlert.id, editFormData.assignedPersonnel);
+-      }
+-      
+-      const newAdminNotes = editFormData.adminNotes.trim();
+-      const newResponseNotes = editFormData.responseNotes.trim();
+-      
+-      const noteParts = [];
+-      if (newAdminNotes) noteParts.push(`Admin: ${newAdminNotes}`);
+-      if (newResponseNotes && newResponseNotes !== selectedAlert.responseNotes && newResponseNotes !== 'N/A') {
+-        noteParts.push(`Response Update: ${newResponseNotes}`);
+-      }
+-      
+-      const combinedNote = noteParts.join(' | ');
+-      if (combinedNote) {
+-        await alertsApi.addNote(selectedAlert.id, combinedNote);
+-      }
+-      
+-      if (editFormData.status !== selectedAlert.status) {
+-        if (editFormData.status === 'new') {
+-          await alertsApi.reopen(selectedAlert.id);
+-        } else if (editFormData.status === 'acknowledged' || editFormData.status === 'responding') {
+-          await alertsApi.acknowledge(selectedAlert.id);
+-        } else if (editFormData.status === 'resolved') {
+-          await alertsApi.resolve(selectedAlert.id);
+-        }
+-      }
+-      
+-      toast.success('Alert details updated successfully');
+-      fetchAlerts();
+-      setShowEditModal(false);
+-      setSelectedAlert(null);
+-    } catch (error: any) {
+-      console.error('Update alert error:', error);
+-      toast.error(error?.message || 'Failed to update alert');
+-    }
+-  };
+-
+-  const handleExportIncident = () => {
+-    if (!selectedAlert) return;
+-    const content = `Alert ID: ${selectedAlert.alertId}\nType: ${selectedAlert.type}\nLocation: ${selectedAlert.location}\nTime: ${selectedAlert.timeDetected}\nStatus: ${selectedAlert.status}\nPriority: ${selectedAlert.priority}`;
+-    const link = document.createElement('a');
+-    link.href = encodeURI(`data:text/plain;charset=utf-8,${content}`);
+-    link.download = `${selectedAlert.alertId}_report.txt`;
+-    link.click();
+-    toast.success('Incident exported successfully');
+-  };
+-
+-  return (
+-    <div className="flex-1 overflow-y-auto">
+-      <div className="p-4 md:p-6 2xl:p-8 w-full max-w-7xl mx-auto space-y-4 md:space-y-6">
+-        {/* Header */}
+-        <div className="mb-4">
+-          <h1 className="font-bold text-gray-900 text-2xl">Alert Management</h1>
+-          <p className="text-sm text-gray-600 mt-1">Manage and monitor all system alerts</p>
+-        </div>
+-
+-        {/* Category 4: Alert Filters */}
+-        <Card className="p-5 bg-white border-0 shadow-sm hover:shadow-md transition-all duration-300">
+-          <h2 className="font-bold text-gray-900 text-lg mb-4">Alert Filters</h2>
+-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+-            <Select value={dateFilter} onValueChange={setDateFilter}>
+-              <SelectTrigger>
+-                <SelectValue placeholder="Date" />
+-              </SelectTrigger>
+-              <SelectContent>
+-                <SelectItem value="all">All Dates</SelectItem>
+-                <SelectItem value="today">Today</SelectItem>
+-                <SelectItem value="week">This Week</SelectItem>
+-                <SelectItem value="month">This Month</SelectItem>
+-              </SelectContent>
+-            </Select>
+-
+-            <Select value={locationFilter} onValueChange={setLocationFilter}>
+-              <SelectTrigger>
+-                <SelectValue placeholder="Location" />
+-              </SelectTrigger>
+-              <SelectContent>
+-                <SelectItem value="all">All Locations</SelectItem>
+-                <SelectItem value="1st floor">1st Floor</SelectItem>
+-                <SelectItem value="2nd floor">2nd Floor</SelectItem>
+-                <SelectItem value="3rd floor">3rd Floor</SelectItem>
+-                <SelectItem value="4th floor">4th Floor</SelectItem>
+-                <SelectItem value="restroom">Restroom</SelectItem>
+-                <SelectItem value="hallway">Hallway</SelectItem>
+-                <SelectItem value="cafeteria">Cafeteria</SelectItem>
+-              </SelectContent>
+-            </Select>
+-
+-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+-              <SelectTrigger>
+-                <SelectValue placeholder="Status" />
+-              </SelectTrigger>
+-              <SelectContent>
+-                <SelectItem value="all">All Status</SelectItem>
+-                <SelectItem value="new">New</SelectItem>
+-                <SelectItem value="acknowledged">Acknowledged</SelectItem>
+-                <SelectItem value="responding">Responding</SelectItem>
+-                <SelectItem value="resolved">Resolved</SelectItem>
+-              </SelectContent>
+-            </Select>
+-
+-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+-              <SelectTrigger>
+-                <SelectValue placeholder="Priority" />
+-              </SelectTrigger>
+-              <SelectContent>
+-                <SelectItem value="all">All Priority</SelectItem>
+-                <SelectItem value="high">High</SelectItem>
+-                <SelectItem value="medium">Medium</SelectItem>
+-                <SelectItem value="low">Low</SelectItem>
+-              </SelectContent>
+-            </Select>
+-
+-            <Select value={personnelFilter} onValueChange={setPersonnelFilter}>
+-              <SelectTrigger>
+-                <SelectValue placeholder="Personnel" />
+-              </SelectTrigger>
+-              <SelectContent>
+-                <SelectItem value="all">All Personnel</SelectItem>
+-                <SelectItem value="Pending">Pending</SelectItem>
+-                {dynamicPersonnel.map(person => (
+-                  <SelectItem key={person} value={person}>{person}</SelectItem>
+-                ))}
+-              </SelectContent>
+-            </Select>
+-
+-            <Select value={typeFilter} onValueChange={setTypeFilter}>
+-              <SelectTrigger>
+-                <SelectValue placeholder="Type" />
+-              </SelectTrigger>
+-              <SelectContent>
+-                <SelectItem value="all">All Types</SelectItem>
+-                <SelectItem value="Vaping Detected">Vaping Detected</SelectItem>
+-                <SelectItem value="High PM2.5">High PM2.5</SelectItem>
+-                <SelectItem value="High VOC">High VOC</SelectItem>
+-              </SelectContent>
+-            </Select>
+-          </div>
+-        </Card>
+-
+-        {/* Category 1: Alert List */}
+-        <Card className="p-5 bg-white border-0 shadow-sm hover:shadow-md transition-all duration-300">
+-          <h2 className="font-bold text-gray-900 text-lg mb-4">Alert List</h2>
+-          <div className="space-y-3">
+-            {filteredAlerts.length === 0 ? (
+-              <div className="text-center py-8 text-gray-500">
+-                <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-40" />
+-                <p className="font-semibold">No alerts found</p>
+-              </div>
+-            ) : (
+-              filteredAlerts.map((alert) => (
+-                <button
+-                  key={alert.id}
+-                  onClick={() => setSelectedAlert(alert)}
+-                  className="w-full text-left p-4 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 hover:-translate-y-1 transition-all duration-300"
+-                >
+-                  <div className="flex items-start justify-between gap-3 mb-2">
+-                    <div className="flex-1">
+-                      <div className="flex items-center gap-2 mb-1">
+-                        <span className="font-bold text-gray-900">{alert.alertId}</span>
+-                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${getStatusColor(alert.status)}`}>
+-                          {alert.status.toUpperCase()}
+-                        </span>
+-                        <span className={`text-xs font-bold px-2 py-1 rounded-full border-2 ${getPriorityColor(alert.priority)}`}>
+-                          {alert.priority.toUpperCase()}
+-                        </span>
+-                      </div>
+-                      <div className="text-sm text-gray-900 font-semibold">{alert.type}</div>
+-                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
+-                        <div className="flex items-center gap-1">
+-                          <MapPin className="h-4 w-4" />
+-                          {alert.location}
+-                        </div>
+-                        <div className="flex items-center gap-1">
+-                          <Clock className="h-4 w-4" />
+-                          {alert.timeDetected}
+-                        </div>
+-                        {alert.assignedPersonnel !== 'Pending' && (
+-                          <div className="flex items-center gap-1">
+-                            <User className="h-4 w-4" />
+-                            {alert.assignedPersonnel}
+-                          </div>
+-                        )}
+-                      </div>
+-                    </div>
+-                  </div>
+-                </button>
+-              ))
+-            )}
+-          </div>
+-        </Card>
+-      </div>
+-
+-      {/* Alert Details Modal (popup) */}
+-      {selectedAlert && (
+-        <>
+-          <div
+-            className="fixed inset-0 bg-black/60 z-50"
+-            onClick={() => setSelectedAlert(null)}
+-          />
+-          <div className="fixed inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 w-full md:max-w-4xl max-h-[90vh] z-50 bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+-            {/* Header */}
+-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 shrink-0">
+-              <div>
+-                <h2 className="font-bold text-gray-900 text-xl">Alert Details</h2>
+-                <p className="text-sm text-gray-600">{selectedAlert.alertId}</p>
+-              </div>
+-              <button
+-                onClick={() => setSelectedAlert(null)}
+-                className="p-2 rounded-full hover:bg-gray-100"
+-              >
+-                <X className="h-5 w-5 text-gray-500" />
+-              </button>
+-            </div>
+-
+-            <div className="p-6 space-y-6 overflow-y-auto">
+-              {/* Section 1: Alert Details */}
+-              <div>
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Alert Information</h3>
+-                <div className="grid grid-cols-2 gap-4">
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Alert ID</div>
+-                    <div className="font-semibold text-gray-900">{selectedAlert.alertId}</div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Alert Type</div>
+-                    <div className="font-semibold text-gray-900">{selectedAlert.type}</div>
+-                  </div>
+-                  <div className="col-span-2">
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Alert Location</div>
+-                    <div className="font-semibold text-gray-900">{selectedAlert.location}</div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Time Detected</div>
+-                    <div className="font-semibold text-gray-900">{selectedAlert.timeDetected}</div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Priority Level</div>
+-                    <span className={`inline-block text-xs font-bold px-3 py-1 rounded-full border-2 ${getPriorityColor(selectedAlert.priority)}`}>
+-                      {selectedAlert.priority.toUpperCase()}
+-                    </span>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Alert Status</div>
+-                    <span className={`inline-block text-xs font-bold px-3 py-1 rounded-full ${getStatusColor(selectedAlert.status)}`}>
+-                      {selectedAlert.status.toUpperCase()}
+-                    </span>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Assigned Personnel</div>
+-                    <div className={`font-semibold ${selectedAlert.assignedPersonnel === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.assignedPersonnel}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Time Acknowledged</div>
+-                    <div className={`font-semibold ${selectedAlert.timeAcknowledged === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.timeAcknowledged}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Time Marked Responding</div>
+-                    <div className={`font-semibold ${selectedAlert.timeResponding === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.timeResponding}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Time Resolved</div>
+-                    <div className={`font-semibold ${selectedAlert.timeResolved === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.timeResolved}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Response Duration</div>
+-                    <div className={`font-semibold ${selectedAlert.responseDuration === 'Pending' || selectedAlert.responseDuration === 'In Progress' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.responseDuration}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Response Result</div>
+-                    <div className={`font-semibold ${selectedAlert.responseResult === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.responseResult}
+-                    </div>
+-                  </div>
+-                  <div className="col-span-2">
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Action Taken</div>
+-                    <div className={`font-semibold ${selectedAlert.actionTaken === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.actionTaken}
+-                    </div>
+-                  </div>
+-                </div>
+-              </div>
+-
+-              {/* Evidence Photo */}
+-              {selectedAlert.photoUrl && (
+-                <div className="border-t border-gray-200 pt-6">
+-                  <h3 className="font-bold text-gray-900 text-lg mb-4">Evidence Photo</h3>
+-                  <div className="rounded-xl overflow-hidden border-2 border-gray-200 bg-gray-50 flex justify-center">
+-                    <img src={selectedAlert.photoUrl} alt="Alert Evidence" className="max-h-[400px] w-auto object-contain" />
+-                  </div>
+-                </div>
+-              )}
+-
+-              {/* Section 2: Incident Response Record */}
+-              <div className="border-t border-gray-200 pt-6">
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Incident Response Record</h3>
+-                <div className="space-y-4">
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Response Result</div>
+-                    <div className={`font-semibold ${selectedAlert.responseResult === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.responseResult}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Response Notes</div>
+-                    <div className={`${selectedAlert.responseNotes === 'N/A' ? 'text-gray-500 italic' : 'text-gray-900'} ${selectedAlert.responseNotes !== 'N/A' && 'bg-gray-50 p-4 rounded-lg'}`}>
+-                      {selectedAlert.responseNotes}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Action Taken</div>
+-                    <div className={`font-semibold ${selectedAlert.actionTaken === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.actionTaken}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Final Status</div>
+-                    <div className={`font-semibold ${selectedAlert.finalStatus === 'Pending' ? 'text-gray-500 italic' : 'text-gray-900'}`}>
+-                      {selectedAlert.finalStatus}
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Escalation Status</div>
+-                    <div className={`font-semibold ${selectedAlert.escalationStatus.includes('Escalated to') ? 'text-orange-700' : 'text-gray-900'}`}>
+-                      {selectedAlert.escalationStatus}
+-                    </div>
+-                  </div>
+-                </div>
+-              </div>
+-
+-              {/* Action Buttons Based on Status */}
+-              <div className="border-t border-gray-200 pt-6">
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Actions</h3>
+-                <div className="flex flex-wrap gap-3">
+-                  {/* Edit Details Button (always shown) */}
+-                  <Button
+-                    variant="outline"
+-                    onClick={handleEditClick}
+-                    className="border-gray-300"
+-                  >
+-                    <Edit className="h-4 w-4 mr-2" />
+-                    Edit Details
+-                  </Button>
+-                  {/* New Alert Buttons */}
+-                  {selectedAlert.status === 'new' && (
+-                    <>
+-                      <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleApiAction(alertsApi.acknowledge(selectedAlert.id), 'Alert acknowledged')}>
+-                        Acknowledge
+-                      </Button>
+-                      <Select onValueChange={(val) => handleApiAction(alertsApi.assign(selectedAlert.id, val), `Assigned to ${val}`)}>
+-                        <SelectTrigger className="w-[180px] h-10 border-gray-300">
+-                          <SelectValue placeholder="Assign Personnel" />
+-                        </SelectTrigger>
+-                        <SelectContent>
+-                          {dynamicPersonnel.map(person => (
+-                            <SelectItem key={person} value={person}>{person}</SelectItem>
+-                          ))}
+-                        </SelectContent>
+-                      </Select>
+-                      <Button variant="outline" className="border-orange-600 text-orange-600 hover:bg-orange-50" onClick={() => handleApiAction(alertsApi.escalate(selectedAlert.id), 'Alert escalated')}>
+-                        Escalate
+-                      </Button>
+-                    </>
+-                  )}
+-
+-                  {/* Responding Alert Buttons */}
+-                  {selectedAlert.status === 'responding' && (
+-                    <>
+-                      <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleApiAction(alertsApi.resolve(selectedAlert.id), 'Alert resolved')}>
+-                        Resolve Alert
+-                      </Button>
+-                      <Button variant="outline" className="border-yellow-600 text-yellow-700 hover:bg-yellow-50" onClick={() => handleApiAction(alertsApi.falseAlarm(selectedAlert.id), 'Marked as false alarm')}>
+-                        Mark as False Alarm
+-                      </Button>
+-                      <Select onValueChange={(val) => handleApiAction(alertsApi.assign(selectedAlert.id, val), `Reassigned to ${val}`)}>
+-                        <SelectTrigger className="w-[180px] h-10 border-gray-300">
+-                          <SelectValue placeholder="Reassign Personnel" />
+-                        </SelectTrigger>
+-                        <SelectContent>
+-                          {dynamicPersonnel.map(person => (
+-                            <SelectItem key={person} value={person}>{person}</SelectItem>
+-                          ))}
+-                        </SelectContent>
+-                      </Select>
+-                      <Button variant="outline" className="border-orange-600 text-orange-600 hover:bg-orange-50" onClick={() => handleApiAction(alertsApi.escalate(selectedAlert.id), 'Alert escalated')}>
+-                        Escalate
+-                      </Button>
+-                    </>
+-                  )}
+-
+-                  {/* Resolved Alert Buttons */}
+-                  {selectedAlert.status === 'resolved' && (
+-                    <>
+-                      <Button variant="outline" onClick={() => navigate(`/admin/logs?alertId=${selectedAlert.id}`)}>
+-                        View Full Log
+-                      </Button>
+-                      <Button variant="outline" onClick={handleExportIncident}>
+-                        Export Incident
+-                      </Button>
+-                      <Button variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50" onClick={() => handleApiAction(alertsApi.reopen(selectedAlert.id), 'Alert reopened')}>
+-                        Reopen Alert
+-                      </Button>
+-                    </>
+-                  )}
+-
+-                  {/* Close Button (always shown) */}
+-                  <Button
+-                    onClick={() => setSelectedAlert(null)}
+-                    variant="outline"
+-                    className="ml-auto"
+-                  >
+-                    Close
+-                  </Button>
+-                </div>
+-              </div>
+-            </div>
+-          </div>
+-        </>
+-      )}
+-
+-      {/* Edit Alert Details Modal */}
+-      {showEditModal && selectedAlert && (
+-        <>
+-          <div
+-            className="fixed inset-0 bg-black/60 z-[60]"
+-            onClick={() => setShowEditModal(false)}
+-          />
+-          <div className="fixed inset-4 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 w-full md:max-w-3xl max-h-[90vh] z-[60] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+-            {/* Header */}
+-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10 shrink-0">
+-              <div>
+-                <h2 className="font-bold text-gray-900 text-xl">Edit Alert Details</h2>
+-                <p className="text-sm text-gray-600">{selectedAlert.alertId}</p>
+-              </div>
+-              <button
+-                onClick={() => setShowEditModal(false)}
+-                className="p-2 rounded-full hover:bg-gray-100"
+-              >
+-                <X className="h-5 w-5 text-gray-500" />
+-              </button>
+-            </div>
+-
+-            <div className="p-6 space-y-6 overflow-y-auto">
+-              {/* Section 1: Alert Assignment */}
+-              <div>
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Alert Assignment</h3>
+-                <div className="space-y-3">
+-                  <div>
+-                    <Label htmlFor="assignedPersonnel" className="text-sm font-semibold text-gray-700">
+-                      Assigned Personnel
+-                    </Label>
+-                    <Select
+-                      value={editFormData.assignedPersonnel}
+-                      onValueChange={(value) => setEditFormData({ ...editFormData, assignedPersonnel: value })}
+-                    >
+-                      <SelectTrigger className="mt-1">
+-                        <SelectValue placeholder="Select personnel" />
+-                      </SelectTrigger>
+-                      <SelectContent>
+-                        <SelectItem value="Pending">Pending</SelectItem>
+-                        {dynamicPersonnel.map(person => (
+-                          <SelectItem key={person} value={person}>{person}</SelectItem>
+-                        ))}
+-                      </SelectContent>
+-                    </Select>
+-                  </div>
+-                </div>
+-              </div>
+-
+-              {/* Section 2: Alert Priority and Status */}
+-              <div className="border-t border-gray-200 pt-6">
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Alert Priority and Status</h3>
+-                <div className="grid grid-cols-2 gap-4">
+-                  <div>
+-                    <Label htmlFor="priority" className="text-sm font-semibold text-gray-700">
+-                      Priority Level
+-                    </Label>
+-                    <Select
+-                      value={editFormData.priority}
+-                      onValueChange={(value) => setEditFormData({ ...editFormData, priority: value })}
+-                    >
+-                      <SelectTrigger className="mt-1">
+-                        <SelectValue placeholder="Select priority" />
+-                      </SelectTrigger>
+-                      <SelectContent>
+-                        <SelectItem value="high">High</SelectItem>
+-                        <SelectItem value="medium">Medium</SelectItem>
+-                        <SelectItem value="low">Low</SelectItem>
+-                      </SelectContent>
+-                    </Select>
+-                  </div>
+-                  <div>
+-                    <Label htmlFor="status" className="text-sm font-semibold text-gray-700">
+-                      Alert Status
+-                    </Label>
+-                    <Select
+-                      value={editFormData.status}
+-                      onValueChange={(value) => setEditFormData({ ...editFormData, status: value })}
+-                    >
+-                      <SelectTrigger className="mt-1">
+-                        <SelectValue placeholder="Select status" />
+-                      </SelectTrigger>
+-                      <SelectContent>
+-                        <SelectItem value="new">New</SelectItem>
+-                        <SelectItem value="acknowledged">Acknowledged</SelectItem>
+-                        <SelectItem value="responding">Responding</SelectItem>
+-                        <SelectItem value="resolved">Resolved</SelectItem>
+-                      </SelectContent>
+-                    </Select>
+-                  </div>
+-                </div>
+-              </div>
+-
+-              {/* Section 3: Incident Response Record */}
+-              <div className="border-t border-gray-200 pt-6">
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Incident Response Record</h3>
+-                <div className="space-y-4">
+-                  <div className="grid grid-cols-2 gap-4">
+-                    <div>
+-                      <Label htmlFor="responseResult" className="text-sm font-semibold text-gray-700">
+-                        Response Result
+-                      </Label>
+-                      <Select
+-                        value={editFormData.responseResult}
+-                        onValueChange={(value) => setEditFormData({ ...editFormData, responseResult: value })}
+-                      >
+-                        <SelectTrigger className="mt-1">
+-                          <SelectValue placeholder="Select result" />
+-                        </SelectTrigger>
+-                        <SelectContent>
+-                          <SelectItem value="Pending">Pending</SelectItem>
+-                          <SelectItem value="Confirmed">Confirmed</SelectItem>
+-                          <SelectItem value="Not Confirmed">Not Confirmed</SelectItem>
+-                          <SelectItem value="False Alarm">False Alarm</SelectItem>
+-                          <SelectItem value="Confirmed - Escalated">Confirmed - Escalated</SelectItem>
+-                        </SelectContent>
+-                      </Select>
+-                    </div>
+-                    <div>
+-                      <Label htmlFor="finalStatus" className="text-sm font-semibold text-gray-700">
+-                        Final Status
+-                      </Label>
+-                      <Select
+-                        value={editFormData.finalStatus}
+-                        onValueChange={(value) => setEditFormData({ ...editFormData, finalStatus: value })}
+-                      >
+-                        <SelectTrigger className="mt-1">
+-                          <SelectValue placeholder="Select final status" />
+-                        </SelectTrigger>
+-                        <SelectContent>
+-                          <SelectItem value="Pending">Pending</SelectItem>
+-                          <SelectItem value="Resolved">Resolved</SelectItem>
+-                          <SelectItem value="Resolved - False Alarm">Resolved - False Alarm</SelectItem>
+-                          <SelectItem value="Resolved - Not Confirmed">Resolved - Not Confirmed</SelectItem>
+-                          <SelectItem value="Resolved - Escalated to Facility Management">Resolved - Escalated to Facility Management</SelectItem>
+-                        </SelectContent>
+-                      </Select>
+-                    </div>
+-                  </div>
+-                  <div>
+-                    <Label htmlFor="actionTaken" className="text-sm font-semibold text-gray-700">
+-                      Action Taken
+-                    </Label>
+-                    <Input
+-                      id="actionTaken"
+-                      value={editFormData.actionTaken}
+-                      onChange={(e) => setEditFormData({ ...editFormData, actionTaken: e.target.value })}
+-                      placeholder="Describe actions taken..."
+-                      className="mt-1"
+-                    />
+-                  </div>
+-                  <div>
+-                    <Label htmlFor="responseNotes" className="text-sm font-semibold text-gray-700">
+-                      Response Notes
+-                    </Label>
+-                    <Textarea
+-                      id="responseNotes"
+-                      value={editFormData.responseNotes}
+-                      onChange={(e) => setEditFormData({ ...editFormData, responseNotes: e.target.value })}
+-                      placeholder="Add detailed response notes..."
+-                      rows={4}
+-                      className="mt-1"
+-                    />
+-                  </div>
+-                </div>
+-              </div>
+-
+-              {/* Section 4: Admin Remarks */}
+-              <div className="border-t border-gray-200 pt-6">
+-                <h3 className="font-bold text-gray-900 text-lg mb-4">Admin Remarks</h3>
+-                <div className="space-y-4">
+-                  <div>
+-                    <Label htmlFor="adminNotes" className="text-sm font-semibold text-gray-700">
+-                      Internal Admin Notes
+-                    </Label>
+-                    <Textarea
+-                      id="adminNotes"
+-                      value={editFormData.adminNotes}
+-                      onChange={(e) => setEditFormData({ ...editFormData, adminNotes: e.target.value })}
+-                      placeholder="Add internal notes (not visible to personnel)..."
+-                      rows={3}
+-                      className="mt-1"
+-                    />
+-                  </div>
+-                  <div>
+-                    <Label htmlFor="reasonForEdit" className="text-sm font-semibold text-gray-700">
+-                      Reason for Edit
+-                    </Label>
+-                    <Textarea
+-                      id="reasonForEdit"
+-                      value={editFormData.reasonForEdit}
+-                      onChange={(e) => setEditFormData({ ...editFormData, reasonForEdit: e.target.value })}
+-                      placeholder="Document why this alert is being edited..."
+-                      rows={2}
+-                      className="mt-1"
+-                    />
+-                  </div>
+-                </div>
+-              </div>
+-
+-              {/* Action Buttons */}
+-              <div className="flex gap-3 pt-4 border-t border-gray-200">
+-                <Button
+-                  variant="outline"
+-                  onClick={() => setShowEditModal(false)}
+-                  className="flex-1"
+-                >
+-                  Cancel
+-                </Button>
+-                <Button
+-                  onClick={handleSaveChanges}
+-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+-                >
+-                  Save Changes
+-                </Button>
+-              </div>
+-            </div>
+-          </div>
+-        </>
+-      )}
+-    </div>
+-  );
+-};
+diff --git a/src/app/pages/AlertDetails.tsx b/src/app/pages/AlertDetails.tsx
+index 13b244c..4050b50 100644
+--- a/src/app/pages/AlertDetails.tsx
++++ b/src/app/pages/AlertDetails.tsx
+@@ -14,6 +14,7 @@ import {
+ import { toast } from 'sonner';
+ import { useAuth } from '../context/AuthContext';
+ import { alertsApi, devicesApi } from '../services/api';
++import { useLiveStream } from '../hooks/useLiveStream';
+ 
+ const PRIORITY_COLORS: Record<string, string> = {
+   high:   'bg-red-100 text-red-700',
+@@ -201,80 +202,57 @@ export const AlertDetails = () => {
+     ? 'Officer ' + (user.name || user.username).charAt(0).toUpperCase() + (user.name || user.username).slice(1)
+     : 'Officer On Duty';
+ 
+-  useEffect(() => {
+-    const fetchAlert = async () => {
+-      if (!id) return;
+-      try {
+-        const alertsData = await alertsApi.getAll().catch(() => []);
+-        const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-        const combined = Array.from(new Map([...mockAlerts, ...alertsData].map((a: any) => [a.id, a])).values());
+-        const a = combined.find((al: any) => al.id === id);
+-        if (a) {
+-          let deviceData: any = null;
+-          if (a.sensorId) {
+-            const devicesData = await devicesApi.getAll().catch(() => []);
+-            deviceData = devicesData.find((d: any) => d.id === a.sensorId);
+-          }
+-
+-          let precision = null;
+-          try {
+-            const stored = localStorage.getItem(`alert_precision_${a.id}`);
+-            if (stored) precision = JSON.parse(stored);
+-          } catch (e) {}
+-
+-          let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
+-          if (isNaN(dateObj.getTime())) dateObj = new Date();
+-
+-          setAlert({
+-            id: a.id,
+-            location: a.floor || 'Unknown Floor',
+-            room: a.location || 'Unknown Room',
+-            timeDetected: a.detectedAt || dateObj.toLocaleString([], { hour: '2-digit', minute: '2-digit' }),
+-            sensorId: a.sensorId || 'Unknown',
+-            status: a.status === 'ACTIVE' ? 'new' : (a.status === 'RESPONDING' || a.status === 'ESCALATED') ? 'responding' : a.status === 'ACKNOWLEDGED' ? 'acknowledged' : 'resolved',
+-            pm25: precision?.pm25 ?? a.pm25 ?? deviceData?.pm25 ?? 45,
+-            voc: precision?.voc ?? a.voc ?? deviceData?.voc ?? 150,
+-            confidence: precision?.confidence ?? a.confidence ?? 95,
+-            type: precision?.type ?? a.type ?? 'Vaping Detected',
+-            priority: a.priority || (precision?.confidence >= 95 ? 'high' : precision?.confidence >= 80 ? 'medium' : 'low'),
+-            assignedResponder: a.respondedBy || null,
+-            photoUrl: a.photoUrl || localStorage.getItem(`alert_photo_${a.id}`) || null,
+-          });
++  const fetchAlert = async () => {
++    if (!id) return;
++    try {
++      const alertsData = await alertsApi.getAll().catch(() => []);
++      const a = alertsData.find((al: any) => al.id === id);
++      if (a) {
++        let deviceData: any = null;
++        if (a.sensorId) {
++          const devicesData = await devicesApi.getAll().catch(() => []);
++          deviceData = devicesData.find((d: any) => d.id === a.sensorId);
+         }
+-      } catch (e) {
+-        console.error(e);
+-      } finally {
+-        setLoading(false);
++
++        let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
++        if (isNaN(dateObj.getTime())) dateObj = new Date();
++
++        setAlert({
++          id: a.id,
++          location: a.floor || 'Unknown Floor',
++          room: a.location || 'Unknown Room',
++          timeDetected: a.detectedAt || dateObj.toLocaleString([], { hour: '2-digit', minute: '2-digit' }),
++          sensorId: a.sensorId || 'Unknown',
++          status: a.status === 'ACTIVE' ? 'new' : (a.status === 'RESPONDING' || a.status === 'ESCALATED') ? 'responding' : a.status === 'ACKNOWLEDGED' ? 'acknowledged' : 'resolved',
++          pm25: a.pm25 ?? deviceData?.pm25 ?? 45,
++          voc: a.voc ?? deviceData?.voc ?? 150,
++          confidence: a.confidence ?? 95,
++          type: a.type ?? 'Vaping Detected',
++          priority: a.priority || 'high',
++          assignedResponder: a.respondedBy || null,
++          photoUrl: a.photoUrl || null,
++        });
+       }
+-    };
++    } catch (e) {
++      console.error(e);
++    } finally {
++      setLoading(false);
++    }
++  };
++
++  useEffect(() => {
+     fetchAlert();
+-    
+-    const handleStorage = (e: StorageEvent) => {
+-      if (e.key === 'mock_alerts' || e.key === 'force_sync') fetchAlert();
+-    };
+-    window.addEventListener('storage', handleStorage);
+-    
+-    return () => {
+-      window.removeEventListener('storage', handleStorage);
+-    };
+   }, [id]);
+ 
++  useLiveStream({ onAlert: () => fetchAlert() });
++
+   const handleAcknowledge = async () => {
+     if (!alert) return;
+     try {
+-      const mocks = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const isMockOnly = mocks.some((m: any) => m.id === alert.id);
+-
+-      if (isMockOnly) {
+-        const updated = mocks.map((m: any) => m.id === alert.id ? { ...m, status: 'ACKNOWLEDGED' } : m);
+-        localStorage.setItem('mock_alerts', JSON.stringify(updated));
+-      } else {
+-        await (alertsApi as any).acknowledge(alert.id);
+-        if (user?.name || user?.username) {
+-          await (alertsApi as any).assign(alert.id, user.name || user.username);
+-        }
++      await (alertsApi as any).acknowledge(alert.id);
++      if (user?.name || user?.username) {
++        await (alertsApi as any).assign(alert.id, user.name || user.username);
+       }
+-      localStorage.setItem('force_sync', Date.now().toString());
+       toast.success('Alert acknowledged');
+       setAlert({ ...alert, status: 'acknowledged', assignedResponder: officerName });
+     } catch (e) {
+@@ -285,17 +263,8 @@ export const AlertDetails = () => {
+   const handleResponding = async () => {
+     if (!alert) return;
+     try {
+-      const mocks = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const isMockOnly = mocks.some((m: any) => m.id === alert.id);
+-
+-      if (isMockOnly) {
+-        const updatedMocks = mocks.map((m: any) => m.id === alert.id ? { ...m, status: 'RESPONDING', respondedBy: officerName, notes: `${officerName} is responding to the scene.` } : m);
+-        localStorage.setItem('mock_alerts', JSON.stringify(updatedMocks));
+-      } else {
+-        await (alertsApi as any).addNote(alert.id, `${officerName} is responding to the scene.`);
+-        await (alertsApi as any).acknowledge(alert.id);
+-      }
+-      localStorage.setItem('force_sync', Date.now().toString());
++      await (alertsApi as any).addNote(alert.id, `${officerName} is responding to the scene.`);
++      await (alertsApi as any).acknowledge(alert.id);
+       setAlert({ ...alert, status: 'responding', assignedResponder: officerName });
+       toast.success('Status updated to responding');
+     } catch (e) {
+@@ -314,34 +283,34 @@ export const AlertDetails = () => {
+     }
+ 
+     try {
+-      const resultStr = verificationResult === 'false_alarm' ? 'False Alarm' 
+-                      : verificationResult === 'not_confirmed' ? 'Not Confirmed' 
+-                      : verificationResult === 'escalated' ? 'Escalated' 
++      const resultStr = verificationResult === 'false_alarm' ? 'False Alarm'
++                      : verificationResult === 'not_confirmed' ? 'Not Confirmed'
++                      : verificationResult === 'escalated' ? 'Escalated'
+                       : 'Confirmed';
+-                      
++
+       const formattedNote = `Result: ${resultStr} | Action Taken: ${actionTaken || 'None'} | Notes: ${notes || 'None'}`;
+ 
+-      const mocks = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const isMockOnly = mocks.some((m: any) => m.id === alert.id);
++      if (capturedPhoto) {
++        try {
++          const blob = await (await fetch(capturedPhoto)).blob();
++          const file = new File([blob], 'evidence.jpg', { type: 'image/jpeg' });
++          await (alertsApi as any).uploadPhoto(alert.id, file);
++        } catch (_uploadErr) {
++          // Photo upload failed silently; resolve still proceeds
++        }
++      }
+ 
+-      if (isMockOnly) {
+-        const status = verificationResult === 'false_alarm' ? 'FALSE_ALARM' : verificationResult === 'escalated' ? 'ESCALATED' : 'RESOLVED';
+-        const updated = mocks.map((m: any) => m.id === alert.id ? { ...m, status, resolvedAt: new Date().toISOString(), notes: formattedNote, photoUrl: capturedPhoto } : m);
+-        localStorage.setItem('mock_alerts', JSON.stringify(updated));
++      if (verificationResult === 'false_alarm') {
++        await (alertsApi as any).falseAlarm(alert.id);
++      } else if (verificationResult === 'escalated') {
++        await (alertsApi as any).escalate(alert.id);
+       } else {
+-        if (capturedPhoto) localStorage.setItem(`alert_photo_${alert.id}`, capturedPhoto);
+-        if (verificationResult === 'false_alarm') {
+-          await (alertsApi as any).falseAlarm(alert.id);
+-        } else if (verificationResult === 'escalated') {
+-          await (alertsApi as any).escalate(alert.id);
+-        } else {
+-          await (alertsApi as any).resolve(alert.id);
+-        }
+-        if (notes || actionTaken) {
+-          await (alertsApi as any).addNote(alert.id, formattedNote);
+-        }
++        await (alertsApi as any).resolve(alert.id);
++      }
++
++      if (notes || actionTaken) {
++        await (alertsApi as any).addNote(alert.id, formattedNote);
+       }
+-      localStorage.setItem('force_sync', Date.now().toString());
+ 
+       setAlert({ ...alert, status: 'resolved', photoUrl: capturedPhoto });
+       toast.success(verificationResult === 'escalated' ? 'Alert escalated successfully' : 'Alert resolved successfully');
+diff --git a/src/app/pages/admin/AdminAlerts.tsx b/src/app/pages/admin/AdminAlerts.tsx
+index da7c529..bfe2f7a 100644
+--- a/src/app/pages/admin/AdminAlerts.tsx
++++ b/src/app/pages/admin/AdminAlerts.tsx
+@@ -16,6 +16,7 @@ import {
+ import { AlertCircle, X, MapPin, Clock, User, Edit } from 'lucide-react';
+ import { toast } from 'sonner';
+ import { alertsApi, usersApi } from '../../services/api';
++import { useLiveStream } from '../../hooks/useLiveStream';
+ 
+ interface Alert {
+   id: string;
+@@ -70,19 +71,12 @@ export const AdminAlerts = () => {
+   useEffect(() => {
+     fetchAlerts();
+     fetchPersonnel();
+-    const interval = setInterval(fetchAlerts, 5000);
+-    
+-    const handleStorage = (e: StorageEvent) => {
+-      if (e.key === 'mock_alerts' || e.key === 'force_sync') fetchAlerts();
+-    };
+-    window.addEventListener('storage', handleStorage);
+-    
+-    return () => {
+-      clearInterval(interval);
+-      window.removeEventListener('storage', handleStorage);
+-    };
++    const interval = setInterval(fetchAlerts, 30000);
++    return () => clearInterval(interval);
+   }, []);
+ 
++  useLiveStream({ onAlert: () => fetchAlerts() });
++
+   useEffect(() => {
+     const alertId = locationUrl.state?.alertId;
+     if (alertId && alerts.length > 0) {
+@@ -115,13 +109,11 @@ export const AdminAlerts = () => {
+   const fetchAlerts = async () => {
+     try {
+       const data = await alertsApi.getAll().catch(() => []);
+-      const mockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const combined = Array.from(new Map([...mockAlerts, ...data].map((a: any) => [a.id, a])).values());
+-      const mappedAlerts = combined.map((alert: any) => {
++      const mappedAlerts = data.map((alert: any) => {
+         let actionStr = 'Pending';
+         let notesStr = 'N/A';
+         let resultStr = alert.status === 'FALSE_ALARM' ? 'False Alarm' : (alert.status === 'RESOLVED' ? 'Confirmed' : 'Pending');
+-        
++
+         if (alert.notes) {
+           let latest = '';
+           if (Array.isArray(alert.notes) && alert.notes.length > 0) {
+@@ -129,14 +121,14 @@ export const AdminAlerts = () => {
+           } else if (typeof alert.notes === 'string') {
+             latest = alert.notes;
+           }
+-          
++
+           if (latest) {
+             if (latest.includes('Action Taken:') && latest.includes('Notes:')) {
+               const parts = latest.split('|');
+               const resultPart = parts.find((p: string) => p.includes('Result:'));
+               const actionPart = parts.find((p: string) => p.includes('Action Taken:'));
+               const notesPart = parts.find((p: string) => p.includes('Notes:'));
+-              
++
+               if (resultPart) resultStr = resultPart.replace('Result:', '').trim();
+               if (actionPart) actionStr = actionPart.replace('Action Taken:', '').trim();
+               if (notesPart) notesStr = notesPart.replace('Notes:', '').trim();
+@@ -146,28 +138,22 @@ export const AdminAlerts = () => {
+             }
+           }
+         }
+-        
++
+         let dateObj = alert.createdAt ? new Date(alert.createdAt) : new Date();
+         if (isNaN(dateObj.getTime())) dateObj = new Date();
+-        
++
+         const ackTime = new Date(dateObj.getTime() + 60000); // +1 min
+         const resTime = new Date(dateObj.getTime() + 120000); // +2 min
+-        
+-        let precision = null;
+-        try {
+-          const stored = localStorage.getItem(`alert_precision_${alert.id}`);
+-          if (stored) precision = JSON.parse(stored);
+-        } catch (e) {}
+ 
+         return {
+         id: alert.id,
+-        alertId: String(alert.id).startsWith('SIM') ? String(alert.id) : `ALT-${String(alert.id).substring(0,6).toUpperCase()}`,
+-        type: precision?.type ?? alert.type ?? 'Vaping Detected',
++        alertId: `ALT-${String(alert.id).substring(0,6).toUpperCase()}`,
++        type: alert.type ?? 'Vaping Detected',
+         location: `${alert.floor} - ${alert.location}`,
+         timeDetected: alert.detectedAt || dateObj.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+         status: alert.status === 'ACTIVE' ? 'new' :
+                 alert.status === 'RESPONDING' ? 'responding' : 'resolved',
+-        priority: alert.priority || (precision?.confidence >= 95 ? 'high' : precision?.confidence >= 80 ? 'medium' : 'low') || 'high',
++        priority: alert.priority || 'high',
+         assignedPersonnel: alert.respondedBy || 'Pending',
+         timeAcknowledged: (alert.status !== 'ACTIVE' && alert.status !== 'new') ? ackTime.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending',
+         timeResponding: ['RESPONDING', 'RESOLVED', 'FALSE_ALARM', 'ESCALATED'].includes(alert.status) ? resTime.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Pending',
+@@ -178,7 +164,7 @@ export const AdminAlerts = () => {
+         responseNotes: notesStr,
+         finalStatus: alert.status,
+         escalationStatus: alert.escalatedBy ? `Escalated by ${alert.escalatedBy}` : 'Not Escalated',
+-        photoUrl: alert.photoUrl || localStorage.getItem(`alert_photo_${alert.id}`) || null,
++        photoUrl: alert.photoUrl || null,
+         timestampValue: dateObj.getTime(),
+       }});
+       setAlerts(mappedAlerts as Alert[]);
+@@ -187,22 +173,9 @@ export const AdminAlerts = () => {
+     }
+   };
+ 
+-  const handleApiAction = async (apiCall: () => Promise<any>, successMsg: string, simAction?: { id: string, status: string }) => {
++  const handleApiAction = async (apiCall: () => Promise<any>, successMsg: string) => {
+     try {
+-      const mocks = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const isMockOnly = simAction && mocks.some((m: any) => m.id === simAction.id);
+-
+-      if (isMockOnly) {
+-        const updated = mocks.map((m: any) => 
+-          m.id === simAction?.id 
+-            ? { ...m, status: simAction.status, resolvedAt: ['RESOLVED', 'FALSE_ALARM'].includes(simAction.status) ? new Date().toISOString() : null } 
+-            : m
+-        );
+-        localStorage.setItem('mock_alerts', JSON.stringify(updated));
+-      } else {
+-        await apiCall();
+-      }
+-      localStorage.setItem('force_sync', Date.now().toString());
++      await apiCall();
+       toast.success(successMsg);
+       fetchAlerts();
+       setSelectedAlert(null);
+@@ -282,62 +255,34 @@ export const AdminAlerts = () => {
+     if (!selectedAlert) return;
+ 
+     try {
+-      const mocks = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-      const isMockOnly = mocks.some((m: any) => m.id === selectedAlert.id);
+-      let updatedMocks = [...mocks];
+-
+       if (editFormData.assignedPersonnel !== selectedAlert.assignedPersonnel && editFormData.assignedPersonnel !== 'Pending') {
+-        if (isMockOnly) {
+-          updatedMocks = updatedMocks.map((m: any) => m.id === selectedAlert.id ? { ...m, respondedBy: editFormData.assignedPersonnel } : m);
+-        } else {
+-          await (alertsApi as any).assign(selectedAlert.id, editFormData.assignedPersonnel);
+-        }
++        await (alertsApi as any).assign(selectedAlert.id, editFormData.assignedPersonnel);
+       }
+-      
++
+       const newAdminNotes = editFormData.adminNotes.trim();
+       const newResponseNotes = editFormData.responseNotes.trim();
+-      
++
+       const noteParts = [];
+       if (newAdminNotes) noteParts.push(`Admin: ${newAdminNotes}`);
+       if (newResponseNotes && newResponseNotes !== selectedAlert.responseNotes && newResponseNotes !== 'N/A') {
+         noteParts.push(`Response Update: ${newResponseNotes}`);
+       }
+-      
++
+       const combinedNote = noteParts.join(' | ');
+       if (combinedNote) {
+-        if (isMockOnly) {
+-          updatedMocks = updatedMocks.map((m: any) => m.id === selectedAlert.id ? { ...m, notes: combinedNote } : m);
+-        } else {
+-          await (alertsApi as any).addNote(selectedAlert.id, combinedNote);
+-        }
++        await (alertsApi as any).addNote(selectedAlert.id, combinedNote);
+       }
+-      
++
+       if (editFormData.status !== selectedAlert.status) {
+-        if (isMockOnly) {
+-          const mappedStatus = editFormData.status === 'new' ? 'ACTIVE' : 
+-                               editFormData.status === 'acknowledged' ? 'ACKNOWLEDGED' : 
+-                               editFormData.status === 'responding' ? 'RESPONDING' : 'RESOLVED';
+-          updatedMocks = updatedMocks.map((m: any) => m.id === selectedAlert.id ? { 
+-            ...m, 
+-            status: mappedStatus, 
+-            resolvedAt: mappedStatus === 'RESOLVED' || mappedStatus === 'FALSE_ALARM' ? new Date().toISOString() : null 
+-          } : m);
+-        } else {
+-          if (editFormData.status === 'new') {
+-            await (alertsApi as any).reopen(selectedAlert.id);
+-          } else if (editFormData.status === 'acknowledged' || editFormData.status === 'responding') {
+-            await (alertsApi as any).acknowledge(selectedAlert.id);
+-          } else if (editFormData.status === 'resolved') {
+-            await (alertsApi as any).resolve(selectedAlert.id);
+-          }
++        if (editFormData.status === 'new') {
++          await (alertsApi as any).reopen(selectedAlert.id);
++        } else if (editFormData.status === 'acknowledged' || editFormData.status === 'responding') {
++          await (alertsApi as any).acknowledge(selectedAlert.id);
++        } else if (editFormData.status === 'resolved') {
++          await (alertsApi as any).resolve(selectedAlert.id);
+         }
+       }
+-      
+-      if (isMockOnly) {
+-        localStorage.setItem('mock_alerts', JSON.stringify(updatedMocks));
+-      }
+-      localStorage.setItem('force_sync', Date.now().toString());
+-      
++
+       toast.success('Alert details updated successfully');
+       fetchAlerts();
+       setShowEditModal(false);
+@@ -664,10 +609,10 @@ export const AdminAlerts = () => {
+                   {/* New Alert Buttons */}
+                   {selectedAlert.status === 'new' && (
+                     <>
+-                      <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleApiAction(() => (alertsApi as any).acknowledge(selectedAlert.id), 'Alert acknowledged', { id: selectedAlert.id, status: 'ACKNOWLEDGED' })}>
++                      <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleApiAction(() => (alertsApi as any).acknowledge(selectedAlert.id), 'Alert acknowledged')}>
+                         Acknowledge
+                       </Button>
+-                      <Select onValueChange={(val) => handleApiAction(() => (alertsApi as any).assign(selectedAlert.id, val), `Assigned to ${val}`, { id: selectedAlert.id, status: 'ACKNOWLEDGED' })}>
++                      <Select onValueChange={(val) => handleApiAction(() => (alertsApi as any).assign(selectedAlert.id, val), `Assigned to ${val}`)}>
+                         <SelectTrigger className="w-[180px] h-10 border-gray-300">
+                           <SelectValue placeholder="Assign Personnel" />
+                         </SelectTrigger>
+@@ -677,7 +622,7 @@ export const AdminAlerts = () => {
+                           ))}
+                         </SelectContent>
+                       </Select>
+-                      <Button variant="outline" className="border-orange-600 text-orange-600 hover:bg-orange-50" onClick={() => handleApiAction(() => (alertsApi as any).escalate(selectedAlert.id), 'Alert escalated', { id: selectedAlert.id, status: 'ESCALATED' })}>
++                      <Button variant="outline" className="border-orange-600 text-orange-600 hover:bg-orange-50" onClick={() => handleApiAction(() => (alertsApi as any).escalate(selectedAlert.id), 'Alert escalated')}>
+                         Escalate
+                       </Button>
+                     </>
+@@ -686,13 +631,13 @@ export const AdminAlerts = () => {
+                   {/* Responding Alert Buttons */}
+                   {selectedAlert.status === 'responding' && (
+                     <>
+-                      <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleApiAction(() => (alertsApi as any).resolve(selectedAlert.id), 'Alert resolved', { id: selectedAlert.id, status: 'RESOLVED' })}>
++                      <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleApiAction(() => (alertsApi as any).resolve(selectedAlert.id), 'Alert resolved')}>
+                         Resolve Alert
+                       </Button>
+-                      <Button variant="outline" className="border-yellow-600 text-yellow-700 hover:bg-yellow-50" onClick={() => handleApiAction(() => (alertsApi as any).falseAlarm(selectedAlert.id), 'Marked as false alarm', { id: selectedAlert.id, status: 'FALSE_ALARM' })}>
++                      <Button variant="outline" className="border-yellow-600 text-yellow-700 hover:bg-yellow-50" onClick={() => handleApiAction(() => (alertsApi as any).falseAlarm(selectedAlert.id), 'Marked as false alarm')}>
+                         Mark as False Alarm
+                       </Button>
+-                      <Select onValueChange={(val) => handleApiAction(() => (alertsApi as any).assign(selectedAlert.id, val), `Reassigned to ${val}`, { id: selectedAlert.id, status: 'RESPONDING' })}>
++                      <Select onValueChange={(val) => handleApiAction(() => (alertsApi as any).assign(selectedAlert.id, val), `Reassigned to ${val}`)}>
+                         <SelectTrigger className="w-[180px] h-10 border-gray-300">
+                           <SelectValue placeholder="Reassign Personnel" />
+                         </SelectTrigger>
+@@ -702,7 +647,7 @@ export const AdminAlerts = () => {
+                           ))}
+                         </SelectContent>
+                       </Select>
+-                      <Button variant="outline" className="border-orange-600 text-orange-600 hover:bg-orange-50" onClick={() => handleApiAction(() => (alertsApi as any).escalate(selectedAlert.id), 'Alert escalated', { id: selectedAlert.id, status: 'ESCALATED' })}>
++                      <Button variant="outline" className="border-orange-600 text-orange-600 hover:bg-orange-50" onClick={() => handleApiAction(() => (alertsApi as any).escalate(selectedAlert.id), 'Alert escalated')}>
+                         Escalate
+                       </Button>
+                     </>
+@@ -717,7 +662,7 @@ export const AdminAlerts = () => {
+                       <Button variant="outline" onClick={handleExportIncident}>
+                         Export Incident
+                       </Button>
+-                      <Button variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50" onClick={() => handleApiAction(() => (alertsApi as any).reopen(selectedAlert.id), 'Alert reopened', { id: selectedAlert.id, status: 'ACTIVE' })}>
++                      <Button variant="outline" className="border-blue-600 text-blue-600 hover:bg-blue-50" onClick={() => handleApiAction(() => (alertsApi as any).reopen(selectedAlert.id), 'Alert reopened')}>
+                         Reopen Alert
+                       </Button>
+                     </>
+diff --git a/src/app/pages/admin/AdminDashboard.tsx b/src/app/pages/admin/AdminDashboard.tsx
+index 8ddad49..4a57943 100644
+--- a/src/app/pages/admin/AdminDashboard.tsx
++++ b/src/app/pages/admin/AdminDashboard.tsx
+@@ -15,11 +15,8 @@ import {
+   Battery,
+   Wifi,
+   TrendingUp,
+-  Play,
+-  X,
+   AlertTriangle,
+ } from 'lucide-react';
+-import { AdminSimulate } from './AdminSimulate';
+ 
+ 
+ export const AdminDashboard = () => {
+@@ -28,7 +25,6 @@ export const AdminDashboard = () => {
+   const [users, setUsers] = useState<any[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+-  const [showDemo, setShowDemo] = useState(false);
+   const navigate = useNavigate();
+ 
+   const loadDashboardData = useCallback(async () => {
+@@ -114,33 +110,13 @@ export const AdminDashboard = () => {
+     );
+   }
+ 
+-  if (showDemo) {
+-    return (
+-      <div className="flex-1 flex flex-col relative h-full bg-[#EEF2FE]">
+-        <div className="absolute top-6 right-8 z-50">
+-          <Button onClick={() => setShowDemo(false)} variant="destructive" className="shadow-xl rounded-xl font-bold">
+-            <X className="w-4 h-4 mr-2" />
+-            Exit Demo Mode
+-          </Button>
+-        </div>
+-        <AdminSimulate />
+-      </div>
+-    );
+-  }
+-
+   return (
+     <div className="flex-1 overflow-y-auto">
+       <div className="p-3 sm:p-4 md:p-6 2xl:p-8 w-full max-w-7xl mx-auto space-y-3 sm:space-y-4 md:space-y-6">
+-        {/* Header with Panel Demo Button */}
+-        <div className="mb-3 sm:mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+-          <div>
+-            <h1 className="font-bold text-gray-900 text-xl sm:text-2xl">Admin Dashboard</h1>
+-            <p className="text-xs sm:text-sm text-gray-600 mt-1">System overview and real-time monitoring</p>
+-          </div>
+-          <Button onClick={() => setShowDemo(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md">
+-            <Play className="w-4 h-4 mr-2 fill-current" />
+-            Panel Demo Mode
+-          </Button>
++        {/* Header */}
++        <div className="mb-3 sm:mb-4">
++          <h1 className="font-bold text-gray-900 text-xl sm:text-2xl">Admin Dashboard</h1>
++          <p className="text-xs sm:text-sm text-gray-600 mt-1">System overview and real-time monitoring</p>
+         </div>
+ 
+         {/* Top Row: 4 Summary Cards */}
+diff --git a/src/app/pages/admin/AdminSimulate.tsx b/src/app/pages/admin/AdminSimulate.tsx
+deleted file mode 100644
+index dd8f2ae..0000000
+--- a/src/app/pages/admin/AdminSimulate.tsx
++++ /dev/null
+@@ -1,277 +0,0 @@
+-import { useState, useEffect, useRef } from 'react';
+-import { Card } from '../../components/ui/card';
+-import { Button } from '../../components/ui/button';
+-import { Label } from '../../components/ui/label';
+-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+-import {
+-  Activity,
+-  Wind,
+-  Radio,
+-  Play,
+-  CloudFog,
+-  AlertTriangle
+-} from 'lucide-react';
+-import { toast } from 'sonner';
+-import { devicesApi } from '../../services/api';
+-
+-export const AdminSimulate = () => {
+-  const [devices, setDevices] = useState<any[]>([]);
+-  const [selectedDevice, setSelectedDevice] = useState<string>('');
+-  
+-  // Manual Simulation State
+-  const [pm25, setPm25] = useState(45);
+-  const [voc, setVoc] = useState(1.5);
+-  const [confidence, setConfidence] = useState(92);
+-  const [loading, setLoading] = useState(false);
+-  const isSimulatingRef = useRef(false);
+-
+-  useEffect(() => {
+-    // Fetch real devices from your backend so you can simulate on real sensors
+-    devicesApi.getAll().then(data => {
+-      setDevices(data);
+-      if (data.length > 0) setSelectedDevice(data[0].id);
+-    }).catch(console.error);
+-  }, []);
+-
+-  const triggerSimulation = async (presetPayload?: any) => {
+-    if (isSimulatingRef.current) return;
+-    
+-    if (!selectedDevice && (!presetPayload || !presetPayload.sensorId)) {
+-      toast.error('Please select a target sensor first');
+-      return;
+-    }
+-
+-    isSimulatingRef.current = true;
+-    setLoading(true);
+-    
+-    const payload = presetPayload || {
+-      sensorId: selectedDevice,
+-      type: "Vaping Detected",
+-      pm25: Number(pm25),
+-      voc: Number(voc),
+-      confidence: Number(confidence),
+-      status: "ACTIVE"
+-    };
+-
+-    // Add a mock ID so it can be tracked locally if backend is offline
+-    const now = new Date();
+-    const finalPayload = { 
+-      ...payload, 
+-      id: `SIM-${Math.floor(Math.random() * 10000)}`,
+-      floor: devices.find(d => d.id === payload.sensorId)?.floor || 'Simulation Floor',
+-      location: devices.find(d => d.id === payload.sensorId)?.location || 'Demo Room',
+-      detectedAt: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+-      createdAt: now.toISOString(),
+-      respondedBy: null,
+-      resolvedAt: null,
+-      photoUrl: null
+-    };
+-
+-    try {
+-      let isBackendSuccess = false;
+-      try {
+-        const token = localStorage.getItem('token');
+-        const res = await fetch('/api/alerts', {
+-          method: 'POST',
+-          headers: { 
+-            'Content-Type': 'application/json',
+-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+-          },
+-          body: JSON.stringify(finalPayload)
+-        });
+-        if (res.ok) isBackendSuccess = true;
+-      } catch (networkErr) {
+-        // Silently catch network errors to ensure smooth panel demo
+-      }
+-
+-      // ALWAYS SHOW SUCCESS FOR THE PANEL DEFENSE
+-      toast.success('Simulation payload transmitted to network.');
+-      
+-      // Save precision data to local storage so UI can pick it up
+-      localStorage.setItem(`alert_precision_${finalPayload.id}`, JSON.stringify({
+-        type: finalPayload.type,
+-        pm25: finalPayload.pm25,
+-        voc: finalPayload.voc,
+-        confidence: finalPayload.confidence
+-      }));
+-
+-      if (!isBackendSuccess) {
+-        // Inject it into local storage only if backend is offline
+-        const existingMockAlerts = JSON.parse(localStorage.getItem('mock_alerts') || '[]');
+-        localStorage.setItem('mock_alerts', JSON.stringify([finalPayload, ...existingMockAlerts]));
+-      }
+-      
+-      localStorage.setItem('force_sync', Date.now().toString());
+-      
+-    } catch (err) {
+-      toast.error('Simulation failed.');
+-    } finally {
+-      setLoading(false);
+-      isSimulatingRef.current = false;
+-    }
+-  };
+-
+-  const clearMocks = () => {
+-    localStorage.removeItem('mock_alerts');
+-    toast.success('Local simulation data cleared! Refreshing...');
+-    setTimeout(() => window.location.reload(), 1000);
+-  };
+-
+-  return (
+-    <div className="flex-1 overflow-y-auto">
+-      <div className="p-4 md:p-6 2xl:p-8 w-full max-w-7xl mx-auto space-y-4 md:space-y-6">
+-        
+-        {/* Header */}
+-        <div className="mb-4">
+-          <h1 className="font-bold text-gray-900 text-2xl flex items-center gap-2">
+-            <Activity className="h-6 w-6 text-blue-600" />
+-            System Simulation & Testing
+-          </h1>
+-          <p className="text-sm text-gray-600 mt-1">
+-            Trigger simulated sensor events and payloads to demonstrate system responsiveness to panelists.
+-          </p>
+-        </div>
+-
+-        <div className="max-w-4xl space-y-6">
+-            
+-            {/* Preset Scenarios Card */}
+-            <Card className="p-6 bg-white shadow-sm border-0">
+-              <h2 className="font-bold text-gray-900 text-lg mb-4">Quick Panelist Demos</h2>
+-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+-                
+-                <Button 
+-                  onClick={() => triggerSimulation({ sensorId: selectedDevice, type: "Vaping Detected", pm25: 45, voc: 1.8, confidence: 85, status: "ACTIVE" })}
+-                  disabled={loading}
+-                  className="h-auto py-4 flex flex-col items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-2 border-blue-200"
+-                >
+-                  <CloudFog className="h-6 w-6" />
+-                  <span className="font-bold">Light Vaping</span>
+-                  <span className="text-xs font-normal opacity-70">PM2.5: 45 | VOC: 1.8</span>
+-                </Button>
+-
+-                <Button 
+-                  onClick={() => triggerSimulation({ sensorId: selectedDevice, type: "Heavy Vaping Detected", pm25: 120, voc: 4.2, confidence: 98, status: "ACTIVE" })}
+-                  disabled={loading}
+-                  className="h-auto py-4 flex flex-col items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border-2 border-purple-200"
+-                >
+-                  <Wind className="h-6 w-6" />
+-                  <span className="font-bold">Heavy Vaping</span>
+-                  <span className="text-xs font-normal opacity-70">PM2.5: 120 | VOC: 4.2</span>
+-                </Button>
+-
+-                <Button 
+-                  onClick={() => triggerSimulation({ sensorId: selectedDevice, type: "Critical Vaping Detected", pm25: 350, voc: 8.5, confidence: 99, status: "ACTIVE" })}
+-                  disabled={loading}
+-                  className="h-auto py-4 flex flex-col items-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 border-2 border-red-200"
+-                >
+-                  <AlertTriangle className="h-6 w-6" />
+-                  <span className="font-bold">Critical Vaping</span>
+-                  <span className="text-xs font-normal opacity-70">PM2.5: 350 | VOC: 8.5</span>
+-                </Button>
+-
+-              </div>
+-            </Card>
+-
+-            {/* Manual Override Card */}
+-            <Card className="p-6 bg-white shadow-sm border-0">
+-              <div className="flex items-center gap-2 mb-6">
+-                <Radio className="h-5 w-5 text-gray-700" />
+-                <h2 className="font-bold text-gray-900 text-lg">Manual Payload Override</h2>
+-              </div>
+-
+-              <div className="space-y-5">
+-                <div>
+-                  <Label className="text-sm font-semibold text-gray-700 mb-2 block">Target Sensor</Label>
+-                  <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+-                    <SelectTrigger className="w-full border-2 border-gray-200 h-12 rounded-xl">
+-                      <SelectValue placeholder="Select a sensor to trigger..." />
+-                    </SelectTrigger>
+-                    <SelectContent>
+-                      {devices.length === 0 ? (
+-                         <SelectItem value="S-01">S-01 (Mock Sensor)</SelectItem>
+-                      ) : (
+-                        devices.map(d => (
+-                          <SelectItem key={d.id} value={d.id}>{d.name || d.id} — {d.location}</SelectItem>
+-                        ))
+-                      )}
+-                    </SelectContent>
+-                  </Select>
+-                </div>
+-
+-                <div className="grid grid-cols-2 gap-6 pt-2">
+-                  <div>
+-                    <div className="flex justify-between mb-2">
+-                      <Label className="text-sm font-semibold text-gray-700">PM2.5 Level</Label>
+-                      <span className="text-sm font-bold text-red-600">{pm25} µg/m³</span>
+-                    </div>
+-                    <input 
+-                      type="range" 
+-                      min="0" max="500" 
+-                      value={pm25} 
+-                      onChange={(e) => setPm25(Number(e.target.value))}
+-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-red-600"
+-                    />
+-                  </div>
+-
+-                  <div>
+-                    <div className="flex justify-between mb-2">
+-                      <Label className="text-sm font-semibold text-gray-700">VOC Level</Label>
+-                      <span className="text-sm font-bold text-orange-600">{voc} ppm</span>
+-                    </div>
+-                    <input 
+-                      type="range" 
+-                      min="0" max="10" step="0.1"
+-                      value={voc} 
+-                      onChange={(e) => setVoc(Number(e.target.value))}
+-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
+-                    />
+-                  </div>
+-                </div>
+-
+-                <div className="pt-2">
+-                  <div className="flex justify-between mb-2">
+-                    <Label className="text-sm font-semibold text-gray-700">AI Confidence Score</Label>
+-                    <span className="text-sm font-bold text-blue-600">{confidence}%</span>
+-                  </div>
+-                  <input 
+-                    type="range" 
+-                    min="0" max="100" 
+-                    value={confidence} 
+-                    onChange={(e) => setConfidence(Number(e.target.value))}
+-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+-                  />
+-                </div>
+-
+-                <div className="pt-4 border-t border-gray-100">
+-                  <Button 
+-                    onClick={() => triggerSimulation()} 
+-                    disabled={loading || !selectedDevice}
+-                    className="w-full bg-[#2665D0] hover:bg-[#1a4d9e] text-white font-bold h-14 rounded-xl text-lg shadow-md"
+-                  >
+-                    {loading ? 'Sending Payload...' : (
+-                      <>
+-                        <Play className="h-5 w-5 mr-2 fill-current" />
+-                        Send Live Alert Trigger
+-                      </>
+-                    )}
+-                  </Button>
+-                </div>
+-              </div>
+-            </Card>
+-            
+-            {/* Reset Button for Panel Defense */}
+-            <div className="flex justify-end pt-2">
+-              <Button 
+-                variant="outline" 
+-                className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+-                onClick={clearMocks}
+-              >
+-                Clear Stuck Simulation Alerts
+-              </Button>
+-            </div>
+-
+-        </div>
+-      </div>
+-    </div>
+-  );
+-};
+\ No newline at end of file

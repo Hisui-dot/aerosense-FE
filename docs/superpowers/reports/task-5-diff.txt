@@ -1,0 +1,50 @@
+diff --git a/backend/middleware/deviceAuth.js b/backend/middleware/deviceAuth.js
+new file mode 100644
+index 0000000..30822e5
+--- /dev/null
++++ b/backend/middleware/deviceAuth.js
+@@ -0,0 +1,12 @@
++const store = require('../db/store');
++
++function requireDevice(req, res, next) {
++  const key = req.headers['x-device-key'];
++  if (!key) return res.status(401).json({ message: 'Device key required' });
++  const device = store.findOne('devices', d => d.apiKey && d.apiKey === key);
++  if (!device) return res.status(401).json({ message: 'Unknown device key' });
++  req.device = device;
++  next();
++}
++
++module.exports = { requireDevice };
+diff --git a/backend/utils/apiKey.js b/backend/utils/apiKey.js
+new file mode 100644
+index 0000000..2e3489e
+--- /dev/null
++++ b/backend/utils/apiKey.js
+@@ -0,0 +1,7 @@
++const crypto = require('crypto');
++
++function generateApiKey() {
++  return 'ak_' + crypto.randomBytes(24).toString('hex');
++}
++
++module.exports = { generateApiKey };
+diff --git a/backend/utils/apiKey.test.js b/backend/utils/apiKey.test.js
+new file mode 100644
+index 0000000..e9dbfd1
+--- /dev/null
++++ b/backend/utils/apiKey.test.js
+@@ -0,0 +1,13 @@
++const { test } = require('node:test');
++const assert = require('node:assert');
++const { generateApiKey } = require('./apiKey');
++
++test('generates a prefixed key', () => {
++  const k = generateApiKey();
++  assert.ok(k.startsWith('ak_'));
++  assert.equal(k.length, 3 + 48);
++});
++
++test('generates unique keys', () => {
++  assert.notEqual(generateApiKey(), generateApiKey());
++});

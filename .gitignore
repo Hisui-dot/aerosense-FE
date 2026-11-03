@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.local
+*.env.local
+*.env.*.local
+
+# Archived / test scripts
+backend/.archive/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Stray redirected run output (do not commit)
+server_out.txt
+server_err.txt
+sim_out.txt
+sim_err.txt
+
+# Editor
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SQLite database (runtime data)
+backend/db/*.sqlite
+backend/db/*.db
+backend/db/*.db.bak
+backend/db/*.db-shm
+backend/db/*.db-wal
+
+# Uploaded files (runtime data)
+backend/uploads/

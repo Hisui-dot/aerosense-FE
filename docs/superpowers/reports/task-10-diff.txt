@@ -1,0 +1,146 @@
+diff --git a/backend/routes/analytics.js b/backend/routes/analytics.js
+index 656f3b5..11d0286 100644
+--- a/backend/routes/analytics.js
++++ b/backend/routes/analytics.js
+@@ -37,54 +37,74 @@ router.get('/weekly', requireAdmin, (req, res) => {
+   const today = new Date();
+   const dayOfWeek = today.getDay();
+   const monday = new Date(today);
++  monday.setHours(0, 0, 0, 0);
+   monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+ 
++  const alerts = store.findAll('alerts');
+   const data = days.map((label, i) => {
+-    const d = new Date(monday);
+-    d.setDate(monday.getDate() + i);
+-    return { id: i + 1, day: label, date: d.getDate(), count: [4, 9, 12, 6, 5, 3, 2][i] };
++    const start = new Date(monday); start.setDate(monday.getDate() + i);
++    const end = new Date(start); end.setDate(start.getDate() + 1);
++    const count = alerts.filter(a => {
++      const t = new Date(a.createdAt);
++      return t >= start && t < end;
++    }).length;
++    return { id: i + 1, day: label, date: start.getDate(), count };
+   });
+-
+   res.json(data);
+ });
+ 
+ // GET /api/analytics/reports
+ router.get('/reports', requireAdmin, (req, res) => {
+   const alerts = store.findAll('alerts');
++  const readings = store.findAll('sensor_readings');
++  const devices = store.findAll('devices');
++
++  const totalDetections = alerts.length;
++  const confirmedIncidents = alerts.filter(a => a.status === 'RESOLVED' || a.status === 'RESPONDING').length;
++  const falseAlarms = alerts.filter(a => a.status === 'FALSE_ALARM').length;
++
++  const byLocation = {};
++  for (const a of alerts) {
++    const key = a.location || 'Unknown';
++    byLocation[key] = (byLocation[key] || 0) + 1;
++  }
++  const highRiskAreas = Object.entries(byLocation)
++    .map(([location, incidents]) => ({ location, incidents, percentage: totalDetections ? Math.round((incidents / totalDetections) * 100) : 0 }))
++    .sort((a, b) => b.incidents - a.incidents).slice(0, 5);
++
++  const buckets = ['8:00–10:00 AM', '10:00–12:00 PM', '12:00–2:00 PM', '2:00–4:00 PM', '4:00–6:00 PM'];
++  const bucketFor = (h) => (h >= 8 && h < 10 ? 0 : h >= 10 && h < 12 ? 1 : h >= 12 && h < 14 ? 2 : h >= 14 && h < 16 ? 3 : h >= 16 && h < 18 ? 4 : -1);
++  const peakCounts = [0, 0, 0, 0, 0];
++  for (const a of alerts) { const b = bucketFor(new Date(a.createdAt).getHours()); if (b >= 0) peakCounts[b]++; }
++
+   res.json({
+     summary: {
+-      totalDetections: 86,
+-      confirmedIncidents: 61,
+-      falseAlarms: 11,
+-      avgResponseTime: '1.9s',
+-      successRate: '96%',
+-      period: 'Apr 1–Apr 7',
++      totalDetections,
++      confirmedIncidents,
++      falseAlarms,
++      avgResponseTime: '—',
++      successRate: totalDetections ? `${Math.round((confirmedIncidents / totalDetections) * 100)}%` : '—',
++      period: 'This week',
+     },
+-    detectionTrend: [
+-      { id: 1, day: 'Mon', count: 9 }, { id: 2, day: 'Tue', count: 11 },
+-      { id: 3, day: 'Wed', count: 14 }, { id: 4, day: 'Thu', count: 12 },
+-      { id: 5, day: 'Fri', count: 18 }, { id: 6, day: 'Sat', count: 13 },
+-      { id: 7, day: 'Sun', count: 9 },
+-    ],
+-    highRiskAreas: [
+-      { location: 'CR 2F', incidents: 19, percentage: 22 },
+-      { location: 'Room 203', incidents: 14, percentage: 16 },
+-      { location: 'Lab 1', incidents: 10, percentage: 12 },
+-      { location: 'Hallway B', incidents: 8, percentage: 9 },
+-    ],
+-    peakTimePeriods: [
+-      { time: '8:00–10:00 AM', incidents: 12 }, { time: '10:00–12:00 PM', incidents: 25 },
+-      { time: '12:00–2:00 PM', incidents: 28 }, { time: '2:00–4:00 PM', incidents: 14 },
+-      { time: '4:00–6:00 PM', incidents: 7 },
+-    ],
+-    devicePerformance: store.findAll('devices').map(d => ({
+-      id: d.id, detections: Math.floor(Math.random() * 15) + 1,
+-      offlineEvents: d.status === 'offline' ? 1 : 0, avgResponse: d.responseTime || '1.5s',
++    detectionTrend: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => ({ id: i + 1, day, count: 0 })),
++    highRiskAreas,
++    peakTimePeriods: buckets.map((time, i) => ({ time, incidents: peakCounts[i] })),
++    devicePerformance: devices.map(d => ({
++      id: d.id,
++      detections: alerts.filter(a => a.deviceId === d.id || a.sensorId === d.id).length,
++      offlineEvents: d.status === 'offline' ? 1 : 0,
++      avgResponse: d.responseTime || '—',
+     })),
+     userActivity: store.findAll('users').filter(u => u.role === 'security').map(u => ({
+-      name: u.name, handled: Math.floor(Math.random() * 18) + 3,
+-      avgAck: '1m 30s', resolved: Math.floor(Math.random() * 12) + 2,
++      name: u.name,
++      handled: alerts.filter(a => a.respondedBy === u.name || a.respondedBy === u.username).length,
++      avgAck: '—',
++      resolved: alerts.filter(a => (a.respondedBy === u.name || a.respondedBy === u.username) && a.status === 'RESOLVED').length,
+     })),
++    airQuality: readings.length ? {
++      avgPm25: Math.round(readings.reduce((s, r) => s + (r.pm25 || 0), 0) / readings.length * 10) / 10,
++      avgVoc: Math.round(readings.reduce((s, r) => s + (r.voc || 0), 0) / readings.length * 100) / 100,
++    } : { avgPm25: 0, avgVoc: 0 },
+   });
+ });
+ 
+@@ -102,10 +122,13 @@ router.get('/qos', requireAdmin, (req, res) => {
+       uptime: '99.7%',
+     },
+     summaryMetrics: [
+-      { label: 'Alerts Today', value: '124' },
+-      { label: 'Failed Alerts', value: '4' },
++      { label: 'Alerts Today', value: String(store.findAll('alerts').filter(a => {
++        const t = new Date(a.createdAt); const now = new Date();
++        return t.toDateString() === now.toDateString();
++      }).length) },
++      { label: 'Active Alerts', value: String(store.findAll('alerts').filter(a => a.status === 'ACTIVE').length) },
+       { label: 'Offline Devices', value: String(devices.filter(d => d.status === 'offline').length) },
+-      { label: 'Avg Latency', value: '1.8s' },
++      { label: 'Readings (24h)', value: String(store.findAll('sensor_readings').filter(r => Date.now() - new Date(r.recordedAt).getTime() < 86400000).length) },
+     ],
+     activeIssues: devices
+       .filter(d => d.status !== 'online' || d.issue)
+@@ -118,12 +141,11 @@ router.get('/qos', requireAdmin, (req, res) => {
+         canResolve: d.status === 'offline',
+         canInvestigate: d.status !== 'offline',
+       })),
+-    performanceData: [
+-      { id: 1, time: '09:00', response: 1.5 }, { id: 2, time: '09:05', response: 1.7 },
+-      { id: 3, time: '09:10', response: 2.1 }, { id: 4, time: '09:15', response: 1.9 },
+-      { id: 5, time: '09:20', response: 1.6 }, { id: 6, time: '09:25', response: 1.8 },
+-      { id: 7, time: '09:30', response: 2.0 },
+-    ],
++    performanceData: (() => {
++      const readings = store.findAll('sensor_readings')
++        .sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt)).slice(-12);
++      return readings.map((r, i) => ({ id: i + 1, time: new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), response: r.pm25 }));
++    })(),
+     recentEvents: store.findAll('logs')
+       .filter(l => l.type === 'device' || l.type === 'system')
+       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))

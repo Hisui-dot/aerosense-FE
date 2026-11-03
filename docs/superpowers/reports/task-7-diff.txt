@@ -1,0 +1,80 @@
+diff --git a/backend/routes/stream.js b/backend/routes/stream.js
+new file mode 100644
+index 0000000..dd0b98b
+--- /dev/null
++++ b/backend/routes/stream.js
+@@ -0,0 +1,39 @@
++const express = require('express');
++const jwt = require('jsonwebtoken');
++const { bus } = require('../services/events');
++
++const router = express.Router();
++
++// EventSource cannot set Authorization headers, so accept the JWT via ?token=
++router.get('/', (req, res) => {
++  const token = req.query.token || (req.headers.authorization || '').replace('Bearer ', '');
++  try {
++    jwt.verify(token, process.env.JWT_SECRET);
++  } catch {
++    return res.status(401).json({ message: 'Invalid or expired token' });
++  }
++
++  res.set({
++    'Content-Type': 'text/event-stream',
++    'Cache-Control': 'no-cache',
++    Connection: 'keep-alive',
++  });
++  res.flushHeaders();
++  res.write(': connected\n\n');
++
++  const send = (event) => (payload) => res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
++  const onReading = send('reading');
++  const onAlert = send('alert');
++  bus.on('reading', onReading);
++  bus.on('alert', onAlert);
++
++  const keepAlive = setInterval(() => res.write(': ping\n\n'), 25000);
++
++  req.on('close', () => {
++    clearInterval(keepAlive);
++    bus.off('reading', onReading);
++    bus.off('alert', onAlert);
++  });
++});
++
++module.exports = router;
+diff --git a/backend/server.js b/backend/server.js
+index 792b6b5..8a81bce 100644
+--- a/backend/server.js
++++ b/backend/server.js
+@@ -12,6 +12,7 @@ const userRoutes = require('./routes/users');
+ const logRoutes = require('./routes/logs');
+ const settingsRoutes = require('./routes/settings');
+ const analyticsRoutes = require('./routes/analytics');
++const streamRoutes = require('./routes/stream');
+ 
+ const app = express();
+ // Override port 8000 to match the Vite proxy (8001) and prevent EADDRINUSE conflicts
+@@ -30,6 +31,7 @@ app.use('/api/users', userRoutes);
+ app.use('/api/logs', logRoutes);
+ app.use('/api/settings', settingsRoutes);
+ app.use('/api/analytics', analyticsRoutes);
++app.use('/api/stream', streamRoutes);
+ 
+ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+ 
+diff --git a/backend/services/events.js b/backend/services/events.js
+new file mode 100644
+index 0000000..f683187
+--- /dev/null
++++ b/backend/services/events.js
+@@ -0,0 +1,9 @@
++const { EventEmitter } = require('events');
++
++const bus = new EventEmitter();
++bus.setMaxListeners(100);
++
++function emitReading(payload) { bus.emit('reading', payload); }
++function emitAlert(payload) { bus.emit('alert', payload); }
++
++module.exports = { bus, emitReading, emitAlert };
