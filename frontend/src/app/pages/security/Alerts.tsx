@@ -2,13 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import {
   ClipboardList,
-  Clock,
-  MapPin,
-  Radio,
-  ArrowRight,
   RotateCcw,
 } from 'lucide-react';
-import { useAuth } from '@/app/context/AuthContext';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -21,7 +16,7 @@ import {
 import { alertsApi, Alert as ApiAlert } from '@/app/services/api';
 import { useLiveStream } from '@/app/hooks/useLiveStream';
 
-interface HistoryAlert {
+export interface HistoryAlert {
   id: string;
   floor: string;
   room: string;
@@ -30,52 +25,124 @@ interface HistoryAlert {
   status: 'NEW' | 'ACK' | 'RESOLVED';
   rawStatus: string;
   detectedAt: string;
+  formattedDateTime: string;
   sensorId: string;
+  telemetrySummary: string;
+  responder: string;
+  notes?: string;
   date: string;
   timestampValue: number;
-  respondedBy?: string | null;
 }
+
+export const MOCK_HISTORY_DATA: HistoryAlert[] = [
+  {
+    id: 'ALT-2026-089',
+    floor: '2nd Floor',
+    room: 'SV Cubicle 1M',
+    location: '2nd Floor — SV Cubicle 1M',
+    sensorId: 'SN-VAPE-004 (Active Sensor)',
+    type: 'Vaping Detected',
+    detectedAt: '11-04-2026 09:42:15 AM',
+    formattedDateTime: 'Nov 4, 2026 · 09:42 AM',
+    telemetrySummary: 'PM2.5: 312 µg/m³ · VOC: 215 ppb · AI Confidence: 96%',
+    status: 'RESOLVED',
+    rawStatus: 'RESOLVED',
+    responder: 'Officer Johnson',
+    notes: 'Area inspected and ventilated. Confirmed vape aerosol spike in SV Cubicle 1M; incident logged and cleared.',
+    date: '2026-11-04',
+    timestampValue: new Date('2026-11-04T09:42:15').getTime(),
+  },
+  {
+    id: 'ALT-2026-088',
+    floor: '3rd Floor',
+    room: 'Girls Restroom',
+    location: '3rd Floor — Girls Restroom',
+    sensorId: 'SN-VAPE-012',
+    type: 'Vaping Detected',
+    detectedAt: '11-04-2026 08:15:30 AM',
+    formattedDateTime: 'Nov 4, 2026 · 08:15 AM',
+    telemetrySummary: 'PM2.5: 184 µg/m³ · VOC: 140 ppb · AI Confidence: 91%',
+    status: 'ACK',
+    rawStatus: 'ACKNOWLEDGED',
+    responder: 'Security Guard',
+    notes: 'Dispatched booth operator to 3rd Floor Girls Restroom for on-site verification.',
+    date: '2026-11-04',
+    timestampValue: new Date('2026-11-04T08:15:30').getTime(),
+  },
+  {
+    id: 'ALT-2026-085',
+    floor: 'Ground Floor',
+    room: 'Cafeteria East Cubicle',
+    location: 'Ground Floor — Cafeteria East Cubicle',
+    sensorId: 'SN-VAPE-001',
+    type: 'Vaping Detected',
+    detectedAt: '11-03-2026 04:30:10 PM',
+    formattedDateTime: 'Nov 3, 2026 · 04:30 PM',
+    telemetrySummary: 'PM2.5: 98 µg/m³ · VOC: 88 ppb · AI Confidence: 89%',
+    status: 'RESOLVED',
+    rawStatus: 'RESOLVED',
+    responder: 'Officer Martinez',
+    notes: 'Routine patrol verification completed. Cubicle cleared and sensor returned to baseline.',
+    date: '2026-11-03',
+    timestampValue: new Date('2026-11-03T16:30:10').getTime(),
+  },
+];
 
 const EASE_OUT_EXPO: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 export const Alerts = () => {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [dateFilter, setDateFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const [alerts, setAlerts] = useState<HistoryAlert[]>([]);
+  const [apiAlerts, setApiAlerts] = useState<HistoryAlert[]>([]);
 
   const fetchAlerts = useCallback(async () => {
     try {
       const data = await alertsApi.getAll().catch(() => []);
-      const mapped = data.map((a: ApiAlert) => {
-        let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
-        if (isNaN(dateObj.getTime())) dateObj = new Date();
-        const floorStr = a.floor || '';
-        const roomStr = a.location || 'Unknown Location';
-        return {
-          id: a.id,
-          floor: floorStr,
-          room: roomStr,
-          location: [floorStr, roomStr].filter(Boolean).join(' — ') || roomStr,
-          type: a.type || 'Vaping Detected',
-          status:
-            a.status === 'ACTIVE' || a.status === 'REOPENED'
-              ? 'NEW'
-              : a.status === 'ACKNOWLEDGED' || a.status === 'RESPONDING'
-              ? 'ACK'
-              : 'RESOLVED',
-          rawStatus: a.status || 'RESOLVED',
-          detectedAt: a.detectedAt || 'Unknown',
-          sensorId: a.sensorId || 'Unknown',
-          date: a.createdAt ? a.createdAt.split('T')[0] : 'Unknown',
-          timestampValue: dateObj.getTime(),
-          respondedBy: a.respondedBy,
-        } as HistoryAlert;
-      });
-      setAlerts(mapped);
+      const mapped = data
+        .filter((a: ApiAlert) => a.status !== 'ACTIVE' && a.status !== 'REOPENED')
+        .map((a: ApiAlert) => {
+          let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
+          if (isNaN(dateObj.getTime())) dateObj = new Date();
+          const floorStr = a.floor || '';
+          const roomStr = a.location || 'Unknown Location';
+          const pm25Val = a.pm25 ?? 120;
+          const vocVal = a.voc ?? 145;
+          const confVal = a.confidence ?? 92;
+          const formattedDateStr = dateObj.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+          const formattedTimeStr = dateObj.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+          });
+
+          return {
+            id: a.id,
+            floor: floorStr,
+            room: roomStr,
+            location: [floorStr, roomStr].filter(Boolean).join(' — ') || roomStr,
+            type: a.type || 'Vaping Detected',
+            status:
+              a.status === 'ACKNOWLEDGED' || a.status === 'RESPONDING'
+                ? 'ACK'
+                : 'RESOLVED',
+            rawStatus: a.status || 'RESOLVED',
+            detectedAt: a.detectedAt || 'Unknown',
+            formattedDateTime: `${formattedDateStr} · ${formattedTimeStr}`,
+            sensorId: a.sensorId || 'SN-VAPE-001',
+            telemetrySummary: `PM2.5: ${pm25Val} µg/m³ · VOC: ${vocVal} ppb · AI Confidence: ${confVal}%`,
+            responder: a.respondedBy || 'Security Guard',
+            date: a.createdAt ? a.createdAt.split('T')[0] : 'Unknown',
+            timestampValue: dateObj.getTime(),
+          } as HistoryAlert;
+        });
+      setApiAlerts(mapped);
     } catch (error) {
       toast.error('Failed to load alerts');
     }
@@ -95,47 +162,31 @@ export const Alerts = () => {
     };
   }, [fetchAlerts]);
 
-  const handleAcknowledge = async (id: string) => {
-    try {
-      await alertsApi.acknowledge(id);
-      setAlerts((prevAlerts) =>
-        prevAlerts.map((alert) =>
-          alert.id === id ? { ...alert, status: 'ACK' as const } : alert
-        )
-      );
-      toast.success('Alert acknowledged successfully');
-    } catch (e) {
-      toast.error('Failed to acknowledge alert');
-    }
-  };
+  // Combine temporary mock dataset with any live history records
+  const mockData = useMemo(() => {
+    const existingIds = new Set(apiAlerts.map((a) => a.id));
+    const combined = [
+      ...apiAlerts,
+      ...MOCK_HISTORY_DATA.filter((m) => !existingIds.has(m.id)),
+    ];
+    return combined;
+  }, [apiAlerts]);
 
-  // All history records belonging to this guard (excluding NEW/ACTIVE dispatches)
-  const guardHistoryAlerts = useMemo(() => {
-    return alerts.filter((alert) => {
-      if (alert.status === 'NEW') return false;
-      if (
-        alert.respondedBy &&
-        alert.respondedBy !== user?.username &&
-        alert.respondedBy !== user?.name
-      ) {
-        return false;
-      }
-      return true;
-    });
-  }, [alerts, user?.username, user?.name]);
-
-  // Dynamic locations from history records + standard locations
+  // Dynamic locations from records
   const locationOptions = useMemo(() => {
-    const set = new Set<string>(['Library', 'CR', 'Classroom']);
-    guardHistoryAlerts.forEach((a) => {
-      if (a.room && a.room !== 'Unknown Location') set.add(a.room);
-      if (a.floor) set.add(a.floor);
+    const set = new Set<string>([
+      '2nd Floor — SV Cubicle 1M',
+      '3rd Floor — Girls Restroom',
+      'Ground Floor — Cafeteria East Cubicle',
+    ]);
+    mockData.forEach((a) => {
+      if (a.location) set.add(a.location);
     });
     return Array.from(set);
-  }, [guardHistoryAlerts]);
+  }, [mockData]);
 
   const filteredAlerts = useMemo(() => {
-    return guardHistoryAlerts
+    return mockData
       .filter((alert) => {
         if (statusFilter !== 'all' && alert.status !== statusFilter) return false;
         if (
@@ -154,15 +205,8 @@ export const Alerts = () => {
         }
         return true;
       })
-      .sort((a, b) => {
-        const statusWeight: Record<string, number> = { NEW: 1, ACK: 2, RESOLVED: 3 };
-        const weightA = statusWeight[a.status] || 4;
-        const weightB = statusWeight[b.status] || 4;
-
-        if (weightA !== weightB) return weightA - weightB;
-        return b.timestampValue - a.timestampValue;
-      });
-  }, [guardHistoryAlerts, statusFilter, locationFilter, dateFilter]);
+      .sort((a, b) => b.timestampValue - a.timestampValue);
+  }, [mockData, statusFilter, locationFilter, dateFilter]);
 
   const hasActiveFilters =
     dateFilter !== 'all' || locationFilter !== 'all' || statusFilter !== 'all';
@@ -202,7 +246,7 @@ export const Alerts = () => {
           className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col"
         >
           {/* Card Header + Filters Row */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 mb-5 border-b border-slate-100">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-5 mb-2 border-b border-slate-100">
             <div>
               <div className="flex items-center gap-2.5">
                 <h2 className="text-lg font-bold text-slate-900">Incident Log</h2>
@@ -230,14 +274,14 @@ export const Alerts = () => {
               </Select>
 
               <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger className="w-full sm:w-[175px] border-slate-200 rounded-xl text-sm bg-white text-slate-700 font-medium shadow-2xs">
+                <SelectTrigger className="w-full sm:w-[220px] border-slate-200 rounded-xl text-sm bg-white text-slate-700 font-medium shadow-2xs">
                   <SelectValue placeholder="Location" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Locations</SelectItem>
                   {locationOptions.map((loc) => (
                     <SelectItem key={loc} value={loc}>
-                      {loc === 'CR' ? 'CR 2nd Floor' : loc}
+                      {loc}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -267,7 +311,7 @@ export const Alerts = () => {
             </div>
           </div>
 
-          {/* ── 3. INCIDENT LIST OR EMPTY STATE ── */}
+          {/* ── 3. INCIDENT TABLE OR EMPTY STATE ── */}
           {filteredAlerts.length === 0 ? (
             <motion.div
               initial={{ opacity: 0, y: 14 }}
@@ -282,102 +326,110 @@ export const Alerts = () => {
                 No response history found
               </p>
               <p className="text-slate-500 text-xs sm:text-sm mt-1 max-w-sm">
-                {guardHistoryAlerts.length === 0
+                {mockData.length === 0
                   ? 'Acknowledged and resolved incident dispatches will appear here.'
                   : 'No records match your selected date, location, or status filters.'}
               </p>
             </motion.div>
           ) : (
-            <div className="space-y-3">
-              {filteredAlerts.map((alert, idx) => {
-                const isAck = alert.status === 'ACK';
-                const isFalseAlarm = alert.rawStatus === 'FALSE_ALARM';
-                const isEscalated = alert.rawStatus === 'ESCALATED';
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="py-3.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      DATE / TIME
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      TYPE
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      LOCATION
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      ASSIGNED TO / RESPONDER
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      STATUS
+                    </th>
+                    <th className="py-3.5 px-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400 text-right">
+                      ACTIONS
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAlerts.map((alert) => {
+                    const isAck = alert.status === 'ACK';
+                    const isFalseAlarm = alert.rawStatus === 'FALSE_ALARM';
+                    const isEscalated = alert.rawStatus === 'ESCALATED';
 
-                let badgeClasses =
-                  'bg-emerald-50 text-emerald-700 border border-emerald-200/80';
-                let badgeLabel = 'RESOLVED';
+                    let badgeClasses =
+                      'bg-emerald-50 text-emerald-700 border border-emerald-200/70';
+                    let badgeLabel = 'RESOLVED';
 
-                if (isAck) {
-                  badgeClasses = 'bg-amber-50 text-amber-700 border border-amber-200/80';
-                  badgeLabel = 'ACKNOWLEDGED';
-                } else if (isFalseAlarm) {
-                  badgeClasses = 'bg-slate-100 text-slate-600 border border-slate-200/80';
-                  badgeLabel = 'FALSE ALARM';
-                } else if (isEscalated) {
-                  badgeClasses = 'bg-purple-50 text-purple-700 border border-purple-200/80';
-                  badgeLabel = 'ESCALATED';
-                }
+                    if (isAck) {
+                      badgeClasses = 'bg-amber-50 text-amber-700 border border-amber-200/70';
+                      badgeLabel = 'ACKNOWLEDGED';
+                    } else if (isFalseAlarm) {
+                      badgeClasses = 'bg-slate-100 text-slate-600 border border-slate-200/70';
+                      badgeLabel = 'FALSE ALARM';
+                    } else if (isEscalated) {
+                      badgeClasses = 'bg-purple-50 text-purple-700 border border-purple-200/70';
+                      badgeLabel = 'ESCALATED';
+                    }
 
-                return (
-                  <motion.div
-                    key={alert.id}
-                    initial={{ opacity: 0, y: 16, filter: 'blur(2px)' }}
-                    animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                    transition={{
-                      duration: 0.65,
-                      delay: Math.min(0.15 + idx * 0.05, 0.45),
-                      ease: EASE_OUT_EXPO,
-                    }}
-                    onClick={() => navigate(`/alerts/${alert.id}`)}
-                    className={`group bg-white rounded-2xl p-4 sm:p-5 border border-slate-100 shadow-xs hover:shadow-md hover:border-slate-200/90 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                      isAck
-                        ? 'border-l-4 border-l-amber-500'
-                        : 'border-l-4 border-l-emerald-500'
-                    }`}
-                  >
-                    {/* Left Info: Location, Sensor ID, Timestamp */}
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <span className="font-bold text-slate-900 text-base flex items-center gap-1.5">
-                          <MapPin className="h-4 w-4 text-[#0284C7] shrink-0" />
-                          {alert.location}
-                        </span>
-                        <span
-                          className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide ${badgeClasses}`}
-                        >
-                          {badgeLabel}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-medium text-slate-500">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Radio className="h-3.5 w-3.5 text-slate-400" />
-                          Sensor <span className="font-mono font-semibold text-slate-700">{alert.sensorId}</span>
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5 text-slate-400" />
-                          Detected: <span className="text-slate-700 font-semibold">{alert.detectedAt}</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Right Action Buttons */}
-                    <div
-                      className="flex items-center gap-2.5 shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {alert.status === 'NEW' && (
-                        <button
-                          type="button"
-                          onClick={() => handleAcknowledge(alert.id)}
-                          className="bg-[#003882] hover:bg-[#0284C7] text-white text-xs font-medium px-4 py-2 rounded-xl transition-all active:scale-95 cursor-pointer"
-                        >
-                          Acknowledge
-                        </button>
-                      )}
-                      <button
-                        type="button"
+                    return (
+                      <tr
+                        key={alert.id}
                         onClick={() => navigate(`/alerts/${alert.id}`)}
-                        className="inline-flex items-center justify-center gap-1.5 bg-[#071126] hover:bg-blue-900 text-white text-xs font-medium px-4 py-2 rounded-xl transition-all active:scale-95 shadow-xs cursor-pointer"
+                        className="bg-white border-b border-slate-100 last:border-b-0 hover:bg-slate-50/70 transition-colors cursor-pointer"
                       >
-                        <span>View Details</span>
-                        <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
+                        {/* Column 1: DATE / TIME */}
+                        <td className="py-4 px-4 align-middle whitespace-nowrap text-sm text-slate-600">
+                          {alert.formattedDateTime}
+                        </td>
+
+                        {/* Column 2: TYPE */}
+                        <td className="py-4 px-4 align-middle whitespace-nowrap text-slate-700 font-medium text-sm">
+                          {alert.type}
+                        </td>
+
+                        {/* Column 3: LOCATION */}
+                        <td className="py-4 px-4 align-middle text-slate-800 font-medium text-sm">
+                          {alert.location}
+                        </td>
+
+                        {/* Column 4: ASSIGNED TO / RESPONDER */}
+                        <td className="py-4 px-4 align-middle whitespace-nowrap text-slate-700 font-medium text-sm">
+                          {alert.responder}
+                        </td>
+
+                        {/* Column 5: STATUS */}
+                        <td className="py-4 px-4 align-middle whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide ${badgeClasses}`}
+                          >
+                            {badgeLabel}
+                          </span>
+                        </td>
+
+                        {/* Column 6: ACTIONS */}
+                        <td
+                          className="py-4 px-4 align-middle text-right whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/alerts/${alert.id}`)}
+                            className="bg-[#071126] text-white hover:bg-blue-900 rounded-xl px-3.5 py-1.5 text-xs font-medium transition-all cursor-pointer"
+                          >
+                            View Log
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </motion.div>
@@ -385,5 +437,6 @@ export const Alerts = () => {
     </div>
   );
 };
+
 
 

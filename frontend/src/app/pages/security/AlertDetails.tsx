@@ -17,17 +17,18 @@ import { toast } from 'sonner';
 import { useAuth } from '@/app/context/AuthContext';
 import { alertsApi, devicesApi, API_HOST } from '@/app/services/api';
 import { useLiveStream } from '@/app/hooks/useLiveStream';
+import { MOCK_HISTORY_DATA } from './Alerts';
 
 const PRIORITY_COLORS: Record<string, string> = {
-  high:   'bg-red-100 text-red-700',
-  medium: 'bg-orange-100 text-orange-700',
-  low:    'bg-yellow-100 text-yellow-700',
+  high:   'bg-slate-100 text-slate-700 border border-slate-200/80',
+  medium: 'bg-slate-100 text-slate-600 border border-slate-200/80',
+  low:    'bg-slate-50 text-slate-500 border border-slate-200/80',
 };
 const STATUS_COLORS: Record<string, string> = {
-  new:          'bg-red-100 text-red-700',
-  acknowledged: 'bg-amber-100 text-amber-700',
-  responding:   'bg-blue-100 text-blue-700',
-  resolved:     'bg-green-100 text-green-700',
+  new:          'bg-rose-50 text-rose-700 border border-rose-200/70',
+  acknowledged: 'bg-amber-50 text-amber-700 border border-amber-200/70',
+  responding:   'bg-blue-50 text-blue-700 border border-blue-200/70',
+  resolved:     'bg-emerald-50 text-emerald-700 border border-emerald-200/70',
 };
 
 const PM25_SAFE = 35;
@@ -110,17 +111,17 @@ function CameraCapture({
   if (capturedImage) {
     return (
       <div>
-        <label className="block text-sm font-semibold text-gray-600 mb-2">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
           Camera Verification
         </label>
-        <div className="border-2 border-green-400 rounded-xl overflow-hidden relative">
+        <div className="border border-emerald-200 rounded-xl overflow-hidden relative">
           <img src={capturedImage} alt="Captured evidence" className="w-full object-cover" style={{ maxHeight: '220px' }} />
-          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: 'rgba(22,163,74,0.90)', backdropFilter: 'blur(4px)' }}>
+          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-600/90 backdrop-blur-xs">
             <ShieldCheck className="h-3.5 w-3.5 text-white" />
-            <span className="text-white font-bold" style={{ fontSize: '11px' }}>Photo Captured</span>
+            <span className="text-white font-semibold text-[11px]">Photo Captured</span>
           </div>
         </div>
-        <button type="button" onClick={handleRetake} className="mt-2.5 w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-gray-200 rounded-xl font-semibold text-gray-600 hover:border-[#2665D0] hover:text-[#2665D0] transition-all bg-[#EEF2FE]">
+        <button type="button" onClick={handleRetake} className="mt-2.5 w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-100 transition-all bg-slate-50 cursor-pointer">
           <RotateCcw className="h-4 w-4" />
           <span className="text-sm">Retake Photo</span>
         </button>
@@ -131,10 +132,10 @@ function CameraCapture({
   if (isLive) {
     return (
       <div>
-        <label className="block text-sm font-semibold text-gray-600 mb-2">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
           Camera Verification
         </label>
-        <div className="border-2 border-[#2665D0] rounded-xl overflow-hidden bg-black relative">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-black relative">
           <video ref={videoRef} playsInline muted autoPlay className="w-full object-cover block" style={{ maxHeight: '220px' }} />
           <div className="absolute inset-0 pointer-events-none" style={{ padding: '10px' }}>
             <div className="absolute top-2 left-2 w-6 h-6 border-t-2 border-l-2 border-white/60 rounded-tl-sm" />
@@ -144,7 +145,7 @@ function CameraCapture({
           </div>
         </div>
         <canvas ref={canvasRef} className="hidden" />
-        <button type="button" onClick={capturePhoto} className="mt-2.5 w-full flex items-center justify-center gap-2 bg-[#0B1847] hover:bg-[#162366] text-white font-bold py-3 rounded-xl shadow-sm transition-colors">
+        <button type="button" onClick={capturePhoto} className="mt-2.5 w-full flex items-center justify-center gap-2 bg-[#071126] hover:bg-blue-900 text-white font-semibold py-3 rounded-xl shadow-xs transition-colors cursor-pointer">
           <Camera className="h-4 w-4" />
           <span className="text-sm">Capture Photo</span>
         </button>
@@ -154,25 +155,25 @@ function CameraCapture({
 
   return (
     <div>
-      <label className="block text-sm font-semibold text-gray-600 mb-2">
+      <label className="block text-sm font-semibold text-slate-700 mb-2">
         Camera Verification
-        <span className="ml-1.5 text-red-500 font-bold">*</span>
+        <span className="ml-1.5 text-slate-400 font-semibold">*</span>
       </label>
-      <div className="border-2 border-gray-200 rounded-xl bg-[#EEF2FE] p-5 flex flex-col items-center gap-3">
-        <div className="w-14 h-14 rounded-2xl bg-white border-2 border-gray-200 flex items-center justify-center shadow-sm">
-          <Camera className="h-7 w-7 text-[#2665D0]" />
+      <div className="border border-slate-200 rounded-xl bg-slate-50 p-5 flex flex-col items-center gap-3">
+        <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-2xs">
+          <Camera className="h-6 w-6 text-slate-700" />
         </div>
         <div className="text-center">
-          <p className="font-semibold text-[#0B1847] text-sm">Photo Evidence Required</p>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="font-semibold text-slate-900 text-sm">Photo Evidence Required</p>
+          <p className="text-xs text-slate-500 mt-0.5">
             Take a live photo of the incident scene to validate this report
           </p>
         </div>
-        {camError && <p className="text-xs font-semibold text-red-600 text-center px-2">{camError}</p>}
-        <button type="button" onClick={startCamera} disabled={isStarting} className="w-full flex items-center justify-center gap-2 border-2 border-[#0B1847] bg-white hover:bg-[#EEF2FE] text-[#0B1847] font-bold py-3 rounded-xl transition-all disabled:opacity-50">
+        {camError && <p className="text-xs font-medium text-rose-600 text-center px-2">{camError}</p>}
+        <button type="button" onClick={startCamera} disabled={isStarting} className="w-full flex items-center justify-center gap-2 border border-slate-200 bg-white hover:bg-slate-100 text-slate-900 font-semibold py-2.5 rounded-xl transition-all disabled:opacity-50 cursor-pointer">
           {isStarting ? (
             <>
-              <span className="w-4 h-4 border-2 border-[#0B1847]/30 border-t-[#0B1847] rounded-full animate-spin" />
+              <span className="w-4 h-4 border-2 border-slate-300 border-t-slate-900 rounded-full animate-spin" />
               <span className="text-sm">Starting camera…</span>
             </>
           ) : (
@@ -219,6 +220,15 @@ export const AlertDetails = () => {
         let dateObj = a.createdAt ? new Date(a.createdAt) : new Date();
         if (isNaN(dateObj.getTime())) dateObj = new Date();
 
+        const rawNotes = Array.isArray((a as any).notes)
+          ? (a as any).notes
+              .map((n: any) => (typeof n === 'string' ? n : n?.text))
+              .filter(Boolean)
+              .join(' — ')
+          : typeof (a as any).notes === 'string'
+          ? (a as any).notes
+          : '';
+
         setAlert({
           id: a.id,
           location: a.floor || 'Unknown Floor',
@@ -232,8 +242,32 @@ export const AlertDetails = () => {
           type: a.type ?? 'Vaping Detected',
           priority: a.priority || 'high',
           assignedResponder: a.respondedBy || null,
+          responderNotes: rawNotes || null,
           photoUrl: a.photoUrl || null,
         });
+      } else {
+        const mockItem = MOCK_HISTORY_DATA.find((m) => m.id === id);
+        if (mockItem) {
+          const pm25Match = mockItem.telemetrySummary.match(/PM2\.5:\s*(\d+)/);
+          const vocMatch = mockItem.telemetrySummary.match(/VOC:\s*(\d+)/);
+          const confMatch = mockItem.telemetrySummary.match(/Confidence:\s*(\d+)/);
+          setAlert({
+            id: mockItem.id,
+            location: mockItem.floor,
+            room: mockItem.room,
+            timeDetected: mockItem.detectedAt,
+            sensorId: mockItem.sensorId,
+            status: mockItem.status === 'ACK' ? 'acknowledged' : 'resolved',
+            pm25: pm25Match ? Number(pm25Match[1]) : 180,
+            voc: vocMatch ? Number(vocMatch[1]) : 140,
+            confidence: confMatch ? Number(confMatch[1]) : 92,
+            type: mockItem.type,
+            priority: 'high',
+            assignedResponder: mockItem.responder,
+            responderNotes: mockItem.notes || null,
+            photoUrl: null,
+          });
+        }
       }
     } catch (e) {
       console.error(e);
@@ -332,138 +366,227 @@ export const AlertDetails = () => {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-[#EEF2FE] pb-24 flex items-center justify-center font-bold text-[#0B1847]">Loading details...</div>;
+    return (
+      <div className="min-h-screen bg-[#f8fafc] p-4 sm:p-8 flex items-center justify-center font-semibold text-slate-700">
+        Loading details...
+      </div>
+    );
   }
 
   if (!alert) {
-    return <div className="min-h-screen bg-[#EEF2FE] pb-24 flex items-center justify-center font-bold text-[#0B1847]">Alert not found.</div>;
+    return (
+      <div className="min-h-screen bg-[#f8fafc] p-4 sm:p-8 flex flex-col items-center justify-center gap-3">
+        <p className="font-semibold text-slate-800">Alert not found.</p>
+        <button
+          type="button"
+          onClick={() => navigate('/alerts')}
+          className="inline-flex items-center gap-2 text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 px-3.5 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to Response History</span>
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-[#EEF2FE] pb-24">
-      {/* Top Bar */}
-      <div className="bg-[#0B1847] sticky top-0 z-30 shadow-lg" style={{ height: '64px' }}>
-        <div className="flex items-center gap-3 h-full px-5 max-w-3xl mx-auto">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 rounded-xl hover:bg-white/10 text-white transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div>
-            <h1 className="font-bold text-white">Alert Details</h1>
-            <p className="text-blue-300 text-xs">Sensor {alert.sensorId}</p>
-          </div>
-        </div>
-      </div>
-
+    <div className="min-h-screen bg-[#f8fafc] p-4 sm:p-8 pb-28 lg:pb-10">
       <motion.div
-        initial={{ opacity: 0, y: 20, filter: 'blur(2px)' }}
-        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-        transition={{ duration: 0.75, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-        className="max-w-3xl mx-auto px-4 pt-5 space-y-5"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+        className="max-w-4xl mx-auto space-y-5"
       >
+        {/* Clean Back Button */}
+        <div>
+          <button
+            type="button"
+            onClick={() => navigate('/alerts')}
+            className="inline-flex items-center gap-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 px-3 py-1.5 -ml-3 rounded-xl text-sm font-medium transition-all cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to Response History</span>
+          </button>
+        </div>
+
         {/* ════════════════════════════════════════════════════
             ALERT DETAILS CARD
         ════════════════════════════════════════════════════ */}
-        <div className="bg-white rounded-2xl shadow-sm p-5 border border-[#2665D0]/20">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-[#0B1847] rounded-xl flex items-center justify-center">
-              <Activity className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h2 className="font-bold text-[#0B1847] text-lg">Alert Details</h2>
-              <p className="text-xs text-gray-500">Sensor data &amp; incident info</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-[#EEF2FE] rounded-xl p-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Alert Type</div>
-              <div className="font-bold text-[#0B1847] text-sm">{alert.type}</div>
-            </div>
-            <div className="bg-[#EEF2FE] rounded-xl p-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Priority</div>
-              <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full uppercase ${PRIORITY_COLORS[alert.priority]}`}>
-                {alert.priority}
-              </span>
-            </div>
-            <div className="bg-[#EEF2FE] rounded-xl p-3 col-span-2">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Location</div>
-              <div className="font-bold text-[#0B1847] text-sm flex items-center gap-1.5">
-                <MapPin className="h-4 w-4 text-[#2665D0]" />
-                {alert.location} — {alert.room}
-              </div>
-            </div>
-            <div className="bg-[#EEF2FE] rounded-xl p-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Time Detected</div>
-              <div className="font-bold text-[#0B1847] text-sm">{alert.timeDetected}</div>
-            </div>
-            <div className="bg-[#EEF2FE] rounded-xl p-3">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Status</div>
-              <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full uppercase ${STATUS_COLORS[alert.status]}`}>
-                {alert.status}
-              </span>
-            </div>
-          </div>
-
-          {/* Sensor Readings */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-red-50 rounded-xl p-4 text-center">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">PM2.5</div>
-              <div className="text-3xl font-bold text-red-600">{alert.pm25}</div>
-              <div className="text-xs text-gray-500 mt-0.5">µg/m³</div>
-              <div className="mt-2 text-xs text-red-500 font-semibold">
-                {alert.pm25 > PM25_SAFE ? '▲ Above safe limit' : '✓ Within limit'}
-              </div>
-            </div>
-            <div className="bg-orange-50 rounded-xl p-4 text-center">
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1">VOC Level</div>
-              <div className="text-3xl font-bold text-orange-600">{alert.voc}</div>
-              <div className="text-xs text-gray-500 mt-0.5">ppb</div>
-              <div className="mt-2 text-xs text-orange-500 font-semibold">
-                {alert.voc > VOC_SAFE ? '▲ Above safe limit' : '✓ Within limit'}
-              </div>
-            </div>
-          </div>
-
-          {alert.assignedResponder && (
-            <div className="flex items-center gap-3 bg-blue-50 rounded-xl px-4 py-3">
-              <div className="w-8 h-8 bg-[#2665D0] rounded-full flex items-center justify-center">
-                <User className="h-4 w-4 text-white" />
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 max-w-4xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center">
+                <Activity className="h-5 w-5 text-slate-700" />
               </div>
               <div>
-                <div className="text-xs text-blue-600 font-semibold">
-                  {alert.status === 'resolved' ? 'Resolved by' : 'Acknowledged by'}
-                </div>
-                <div className="text-sm font-bold text-[#0B1847]">{alert.assignedResponder}</div>
+                <h1 className="font-bold text-slate-900 text-lg">Alert Details</h1>
+                <p className="text-xs text-slate-500">
+                  Full incident telemetry &amp; response log
+                </p>
               </div>
             </div>
-          )}
 
+            <span className="inline-flex items-center bg-slate-100 text-slate-700 border border-slate-200/80 px-3 py-1 rounded-lg text-xs font-mono font-semibold">
+              Alert ID: {alert.id}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                Alert ID
+              </div>
+              <div className="font-mono text-slate-900 font-semibold text-sm">{alert.id}</div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                Alert Type
+              </div>
+              <div className="text-slate-900 font-semibold text-sm">{alert.type}</div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                Status &amp; Priority
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wide ${
+                    STATUS_COLORS[alert.status] || STATUS_COLORS.resolved
+                  }`}
+                >
+                  {alert.status}
+                </span>
+                <span
+                  className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wide ${
+                    PRIORITY_COLORS[alert.priority] || PRIORITY_COLORS.high
+                  }`}
+                >
+                  {alert.priority}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                Location
+              </div>
+              <div className="font-semibold text-slate-900 text-sm flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-slate-400 shrink-0" />
+                <span>
+                  {alert.location} — {alert.room}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                Sensor ID
+              </div>
+              <div className="font-semibold text-slate-900 text-sm">{alert.sensorId}</div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                Timestamp
+              </div>
+              <div className="font-semibold text-slate-900 text-sm">{alert.timeDetected}</div>
+            </div>
+          </div>
+
+          {/* Full Telemetry Breakdown (PM2.5, VOC Level, AI Confidence) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-center">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                PM2.5
+              </div>
+              <div className="text-2xl font-bold text-slate-900">
+                {alert.pm25} <span className="text-sm font-medium text-slate-500">µg/m³</span>
+              </div>
+              <div className="mt-1.5 text-xs text-slate-500">
+                {alert.pm25 > PM25_SAFE ? 'Above standard threshold' : 'Within standard threshold'}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-center">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                VOC Level
+              </div>
+              <div className="text-2xl font-bold text-slate-900">
+                {alert.voc} <span className="text-sm font-medium text-slate-500">ppb</span>
+              </div>
+              <div className="mt-1.5 text-xs text-slate-500">
+                {alert.voc > VOC_SAFE ? 'Above standard threshold' : 'Within standard threshold'}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-center">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                AI Confidence
+              </div>
+              <div className="text-2xl font-bold text-slate-900">
+                {alert.confidence}%
+              </div>
+              <div className="mt-1.5 text-xs text-slate-500">
+                Detection certainty
+              </div>
+            </div>
+          </div>
+
+          {/* Responder & Responder Notes */}
+          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+            {alert.assignedResponder && (
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white border border-slate-200 rounded-full flex items-center justify-center shrink-0">
+                  <User className="h-4 w-4 text-slate-600" />
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 font-medium">
+                    {alert.status === 'resolved' ? 'Resolved by' : 'Assigned Responder'}
+                  </div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {alert.assignedResponder}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className={alert.assignedResponder ? 'pt-3 border-t border-slate-200/70' : ''}>
+              <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">
+                <FileText className="h-3.5 w-3.5 text-slate-400" />
+                <span>Responder Notes</span>
+              </div>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                {alert.responderNotes || 'No responder notes recorded for this incident.'}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* ════════════════════════════════════════════════════
             NEXT STEP PROGRESSION
         ════════════════════════════════════════════════════ */}
         {(alert.status === 'new' || alert.status === 'acknowledged') && (
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <h2 className="font-bold text-[#0B1847] text-lg mb-4">Next Step</h2>
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 max-w-4xl">
+            <h2 className="font-bold text-slate-900 text-base mb-4">Next Step</h2>
             <div className="flex gap-3">
               {alert.status === 'new' ? (
                 <button
+                  type="button"
                   onClick={handleAcknowledge}
-                  className="w-full flex items-center justify-center gap-2 p-4 rounded-xl font-bold transition-all border-2 border-[#0B1847] bg-[#EEF2FE] text-[#0B1847] hover:bg-[#dde4f9]"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-sm transition-all bg-[#071126] text-white hover:bg-blue-900 cursor-pointer"
                 >
-                  <AlertCircle className="h-5 w-5" />
+                  <AlertCircle className="h-4 w-4" />
                   <span>Acknowledge Alert</span>
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={handleResponding}
-                  className="w-full flex items-center justify-center gap-2 p-4 rounded-xl font-bold transition-all border-2 border-amber-500 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-sm transition-all bg-[#071126] text-white hover:bg-blue-900 cursor-pointer"
                 >
-                  <Clock className="h-5 w-5" />
+                  <Clock className="h-4 w-4" />
                   <span>Mark as Responding</span>
                 </button>
               )}
@@ -476,112 +599,126 @@ export const AlertDetails = () => {
         ════════════════════════════════════════════════════ */}
         {alert.status === 'resolved' ? (
           alert.photoUrl && (
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <h2 className="font-bold text-[#0B1847] text-lg mb-4">Evidence Photo</h2>
-              <div className="rounded-xl overflow-hidden border-2 border-gray-200 bg-gray-50 flex justify-center">
-                <img src={alert.photoUrl.startsWith('http') ? alert.photoUrl : API_HOST + alert.photoUrl} alt="Alert Evidence" className="max-h-[400px] w-auto object-contain" />
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 max-w-4xl">
+              <h2 className="font-bold text-slate-900 text-base mb-4">Evidence Photo</h2>
+              <div className="rounded-xl overflow-hidden border border-slate-100 bg-slate-50 flex justify-center">
+                <img
+                  src={alert.photoUrl.startsWith('http') ? alert.photoUrl : API_HOST + alert.photoUrl}
+                  alt="Alert Evidence"
+                  className="max-h-[400px] w-auto object-contain"
+                />
               </div>
             </div>
           )
-        ) : alert.status !== 'new' && (
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-[#0B1847] text-lg">Verification Form</h2>
-              <button
-                type="button"
-                onClick={handleCancelAck}
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-red-600 transition-colors"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Cancel acknowledgment
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="verificationResult" className="block text-sm font-semibold text-gray-600 mb-2">
-                  Verification Result
-                </label>
-                <select
-                  id="verificationResult"
-                  name="verificationResult"
-                  value={verificationResult}
-                  onChange={e => setVerificationResult(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:outline-none focus:border-[#2665D0] bg-[#EEF2FE] text-[#0B1847]"
+        ) : (
+          alert.status !== 'new' && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 max-w-4xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-bold text-slate-900 text-base">Verification Form</h2>
+                <button
+                  type="button"
+                  onClick={handleCancelAck}
+                  className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                 >
-                  <option value="">Select result...</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="not_confirmed">Not confirmed</option>
-                  <option value="false_alarm">False alarm</option>
-                  <option value="escalated">Escalated</option>
-                </select>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Cancel acknowledgment
+                </button>
               </div>
+              <div className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="verificationResult"
+                    className="block text-sm font-semibold text-slate-700 mb-2"
+                  >
+                    Verification Result
+                  </label>
+                  <select
+                    id="verificationResult"
+                    name="verificationResult"
+                    value={verificationResult}
+                    onChange={(e) => setVerificationResult(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-slate-400 bg-slate-50 text-slate-900"
+                  >
+                    <option value="">Select result...</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="not_confirmed">Not confirmed</option>
+                    <option value="false_alarm">False alarm</option>
+                    <option value="escalated">Escalated</option>
+                  </select>
+                </div>
 
-              <div>
-                <label htmlFor="actionTaken" className="block text-sm font-semibold text-gray-600 mb-2">
-                  Action Taken
-                </label>
-                <input
-                  id="actionTaken"
-                  name="actionTaken"
-                  type="text"
-                  value={actionTaken}
-                  onChange={e => setActionTaken(e.target.value)}
-                  placeholder="e.g., Student escorted to office"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:outline-none focus:border-[#2665D0] bg-[#EEF2FE] text-[#0B1847] placeholder:text-gray-400"
+                <div>
+                  <label
+                    htmlFor="actionTaken"
+                    className="block text-sm font-semibold text-slate-700 mb-2"
+                  >
+                    Action Taken
+                  </label>
+                  <input
+                    id="actionTaken"
+                    name="actionTaken"
+                    type="text"
+                    value={actionTaken}
+                    onChange={(e) => setActionTaken(e.target.value)}
+                    placeholder="e.g., Student escorted to office"
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-slate-400 bg-slate-50 text-slate-900 placeholder:text-slate-400"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="notes" className="block text-sm font-semibold text-slate-700 mb-2">
+                    Notes
+                  </label>
+                  <textarea
+                    id="notes"
+                    name="notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Brief description of what happened..."
+                    rows={3}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-slate-400 bg-slate-50 text-slate-900 placeholder:text-slate-400 resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                    Step 2 of 2
+                  </span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+
+                <CameraCapture
+                  capturedImage={capturedPhoto}
+                  onCapture={(url) => setCapturedPhoto(url)}
+                  onRetake={() => setCapturedPhoto(null)}
                 />
+
+                <button
+                  type="button"
+                  onClick={handleSubmitResolve}
+                  disabled={!capturedPhoto || !verificationResult}
+                  className={`w-full font-semibold text-sm py-3 rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 ${
+                    capturedPhoto && verificationResult
+                      ? 'bg-[#071126] hover:bg-blue-900 text-white cursor-pointer'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  Submit &amp; {verificationResult === 'escalated' ? 'Escalate' : 'Resolve'} Alert
+                </button>
+
+                {(!capturedPhoto || !verificationResult) && (
+                  <p className="text-center text-xs text-slate-400 -mt-1">
+                    {!verificationResult
+                      ? 'Select a verification result to continue'
+                      : 'Capture a photo above to enable submission'}
+                  </p>
+                )}
               </div>
-
-              <div>
-                <label htmlFor="notes" className="block text-sm font-semibold text-gray-600 mb-2">Notes</label>
-                <textarea
-                  id="notes"
-                  name="notes"
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="Brief description of what happened..."
-                  rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-medium focus:outline-none focus:border-[#2665D0] bg-[#EEF2FE] text-[#0B1847] placeholder:text-gray-400 resize-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-100" />
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                  Step 2 of 2
-                </span>
-                <div className="flex-1 h-px bg-gray-100" />
-              </div>
-
-              <CameraCapture
-                capturedImage={capturedPhoto}
-                onCapture={url => setCapturedPhoto(url)}
-                onRetake={() => setCapturedPhoto(null)}
-              />
-
-              <button
-                onClick={handleSubmitResolve}
-                disabled={!capturedPhoto || !verificationResult}
-                className={`w-full font-bold py-3 rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 ${
-                  capturedPhoto && verificationResult
-                    ? 'bg-[#2665D0] hover:bg-[#1a4d9e] text-white'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                <ShieldCheck className="h-4 w-4" />
-                Submit &amp; {verificationResult === 'escalated' ? 'Escalate' : 'Resolve'} Alert
-              </button>
-
-              {(!capturedPhoto || !verificationResult) && (
-                <p className="text-center text-xs text-gray-400 -mt-1">
-                  {!verificationResult
-                    ? 'Select a verification result to continue'
-                    : 'Capture a photo above to enable submission'}
-                </p>
-              )}
             </div>
-          </div>
+          )
         )}
-
       </motion.div>
     </div>
   );
